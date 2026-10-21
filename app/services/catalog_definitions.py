@@ -5,6 +5,7 @@ from typing import Any, cast
 
 from loguru import logger
 
+from app.core.config import settings as app_settings
 from app.core.constants import DISCOVER_ONLY_EXTRA
 from app.core.settings import CatalogConfig, LLMConfig, UserSettings, resolve_llm_config
 from app.models.library import LibraryCollection
@@ -12,6 +13,7 @@ from app.services.profile.service import ProfileService
 from app.services.row_generator import RowGeneratorService
 from app.services.tmdb.service import get_tmdb_service
 from app.services.user_cache import user_cache
+from app.watchly_c.seeds import choose_seeds
 
 
 def get_catalogs_from_config(
@@ -174,7 +176,7 @@ class DynamicCatalogService:
             catalogs.extend(theme_catalogs)
 
         for mtype in ["movie", "series"]:
-            await self._add_item_based_rows(catalogs, library_items, mtype, item_cfg, row_slots)
+            await self._add_item_based_rows(catalogs, library_items, mtype, item_cfg, row_slots, token)
 
         catalogs.extend(get_catalogs_from_config(user_settings, "watchly.rec", "Top Picks for You", True, True))
         catalogs.extend(
@@ -358,6 +360,7 @@ class DynamicCatalogService:
         content_type: str,
         item_config: Any,
         row_slots: dict[str, dict[str, str]],
+        token: str | None = None,
     ) -> None:
         """Emit `item_config.rows` item-based rows per content type.
 
@@ -393,6 +396,11 @@ class DynamicCatalogService:
 
         display_at_home = getattr(item_config, "display_at_home", True)
         seeds = random.sample(candidates, k=min(item_config.rows, len(candidates)))
+        if app_settings.WEIGHTED_ITEM_SEEDS:
+            typed = library_items.for_type(content_type)
+            pool = typed.loved + typed.liked + typed.watched
+            picks = await choose_seeds(token, pool, item_config.rows, content_type, self._parse_item_last_watched)
+            seeds = [(i, i.is_loved) for i in picks]
         for slot, (seed, seed_is_loved) in enumerate(seeds, start=1):
             label = "Because you loved" if seed_is_loved else "Because you watched"
             entry = self.build_catalog_entry(seed, label, "watchly.item", display_at_home)

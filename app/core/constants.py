@@ -30,6 +30,11 @@ CATALOG_KEY: str = "watchly:catalog:{token}:{type}:{id}"
 # Versioned because the manifest embeds the addon version: a deploy orphans the old
 # entries rather than serving a stale version string until the TTL runs out.
 MANIFEST_KEY: str = "watchly:manifest:{version}:{token}"
+# Watchly C: the item-row seeds picked per day, so a day's pick is stable and
+# recent seeds aren't repeated.
+SEED_LOG_KEY: str = "watchly:c:seeds:{token}"
+# Watchly C: one daily refresh run per day, however often the cron fires.
+DAILY_REFRESH_RUN_KEY: str = "watchly:c:daily_refresh:{day}"
 
 # The manifest is rebuilt on save and by the catalog updater, so this is only a
 # backstop against an invalidation being missed.

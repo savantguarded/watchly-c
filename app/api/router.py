@@ -1,5 +1,7 @@
 from fastapi import APIRouter
 
+from app.watchly_c.daily_refresh import router as watchly_c_router
+
 from .endpoints.announcement import router as announcement_router
 from .endpoints.catalogs import router as catalogs_router
 from .endpoints.dashboard import router as dashboard_router
@@ -35,3 +37,4 @@ api_router.include_router(oauth_router)
 api_router.include_router(dashboard_router)
 api_router.include_router(status_router)
 api_router.include_router(nuvio_router)
+api_router.include_router(watchly_c_router)

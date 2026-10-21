@@ -55,6 +55,16 @@ class Settings(BaseSettings):
     SIMKL_CLIENT_ID: str | None = None
     SIMKL_CLIENT_SECRET: str | None = None
 
+    # Watchly C tweaks. Each one switches back to stock Watchly behaviour when off.
+    NUVIO_MDBLIST_RATINGS: bool = True
+    WEIGHTED_ITEM_SEEDS: bool = True
+    MIXED_ITEM_ROWS: bool = True
+    DAILY_SHUFFLE: bool = True
+    # The day boundary for daily seeds, shuffles and the daily refresh.
+    DAILY_TIMEZONE: str = "Africa/Lagos"
+    # Vercel sends this as a Bearer token on cron calls once it is set in the project.
+    CRON_SECRET: str | None = None
+
 
 settings = Settings()
 

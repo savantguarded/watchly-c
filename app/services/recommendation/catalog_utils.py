@@ -1,7 +1,9 @@
 import random
 from typing import Any
 
+from app.core.config import settings as app_config
 from app.core.settings import UserSettings
+from app.watchly_c.shuffle import daily_shuffle
 
 
 def should_shuffle(user_settings: UserSettings, catalog_id: str) -> bool:
@@ -12,6 +14,8 @@ def should_shuffle(user_settings: UserSettings, catalog_id: str) -> bool:
 def shuffle_data_if_needed(
     user_settings: UserSettings, catalog_id: str, data: list[dict[str, Any]]
 ) -> list[dict[str, Any]]:
+    if app_config.DAILY_SHUFFLE:
+        return daily_shuffle(user_settings, catalog_id, data)
     if should_shuffle(user_settings, catalog_id):
         random.shuffle(data)
     return data

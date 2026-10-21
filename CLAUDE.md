@@ -107,3 +107,8 @@ A reviewer must not be able to tell the diff was AI-written.
 - Never `git add -A` or `git add .` — stage only the files for that commit with explicit paths. One fix per commit, so either can be reverted independently. Prefix with the area: `fix(library): …`, `refactor(catalogs): …`, `feat(trakt): …`.
 - Never bump `app/core/version.py` as a drive-by. On `main` that triggers the release chain: GHCR push, tag, GitHub release.
 - Never commit or push unless asked. Read-only git is always fine.
+
+## Watchly C (this fork)
+
+- This repo is Watchly C, a personal fork that tracks upstream TimilsinaBimal/Watchly. Every fork change lives in `app/watchly_c/` behind a switch in `app/core/config.py`, with a small hook into upstream code. Keep hooks small so upstream merges stay clean, and keep the README's "Watchly C" section in step with the tweaks.
+- Upstream updates arrive on the `upstream-sync` branch from `.github/workflows/upstream-sync.yml`; merge it into `main` after the tests pass.

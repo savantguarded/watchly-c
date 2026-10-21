@@ -59,7 +59,9 @@ class Settings(BaseSettings):
     NUVIO_MDBLIST_RATINGS: bool = True
     WEIGHTED_ITEM_SEEDS: bool = True
     MIXED_ITEM_ROWS: bool = True
-    DAILY_SHUFFLE: bool = True
+    # Rows with Shuffle on keep one order for this many hours, then reshuffle. 0 is
+    # stock Watchly: a new order on every request.
+    SHUFFLE_INTERVAL_HOURS: int = 1
     # Hours from UTC where "a day" starts for daily seeds and shuffles. An offset rather
     # than a zone name: zone data isn't guaranteed on every host, and Lagos has no DST.
     DAILY_UTC_OFFSET_HOURS: float = 1.0

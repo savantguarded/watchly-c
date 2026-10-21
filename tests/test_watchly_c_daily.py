@@ -1,5 +1,5 @@
 import asyncio
-from datetime import date
+from datetime import date, datetime, timezone
 
 import pytest
 from fastapi.testclient import TestClient
@@ -7,7 +7,7 @@ from fastapi.testclient import TestClient
 from app.core.app import app
 from app.core.settings import get_default_settings
 from app.watchly_c import daily_refresh, shuffle
-from app.watchly_c.shuffle import daily_shuffle
+from app.watchly_c.shuffle import timed_shuffle
 
 
 class FakeRedis:
@@ -122,30 +122,43 @@ def shuffled_settings(catalog_id: str):
 ROW = [{"id": f"tt{n}"} for n in range(20)]
 
 
-def test_a_shuffled_row_keeps_its_order_all_day(monkeypatch):
-    monkeypatch.setattr(shuffle, "today", lambda: date(2026, 10, 22))
+def test_a_shuffled_row_keeps_its_order_within_the_window(monkeypatch):
+    monkeypatch.setattr(shuffle, "shuffle_period", lambda: "2026-10-22:14")
     user_settings = shuffled_settings("watchly.rec")
 
-    first = daily_shuffle(user_settings, "watchly.rec", list(ROW))
+    first = timed_shuffle(user_settings, "watchly.rec", list(ROW))
 
     assert first != ROW
-    assert daily_shuffle(user_settings, "watchly.rec", list(ROW)) == first
+    assert timed_shuffle(user_settings, "watchly.rec", list(ROW)) == first
 
 
-def test_a_shuffled_row_changes_order_with_the_day(monkeypatch):
+def test_a_shuffled_row_changes_order_with_the_window(monkeypatch):
     user_settings = shuffled_settings("watchly.rec")
-    monkeypatch.setattr(shuffle, "today", lambda: date(2026, 10, 22))
-    monday = daily_shuffle(user_settings, "watchly.rec", list(ROW))
-    monkeypatch.setattr(shuffle, "today", lambda: date(2026, 10, 23))
+    monkeypatch.setattr(shuffle, "shuffle_period", lambda: "2026-10-22:14")
+    two_pm = timed_shuffle(user_settings, "watchly.rec", list(ROW))
+    monkeypatch.setattr(shuffle, "shuffle_period", lambda: "2026-10-22:15")
 
-    assert daily_shuffle(user_settings, "watchly.rec", list(ROW)) != monday
+    assert timed_shuffle(user_settings, "watchly.rec", list(ROW)) != two_pm
+
+
+def test_the_window_follows_the_interval(monkeypatch):
+    class Clock(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            return datetime(2026, 10, 22, 13, 30, tzinfo=timezone.utc)  # 14:30 in Lagos
+
+    monkeypatch.setattr(shuffle, "datetime", Clock)
+    monkeypatch.setattr(shuffle.settings, "SHUFFLE_INTERVAL_HOURS", 1)
+    assert shuffle.shuffle_period() == "2026-10-22:14"
+    monkeypatch.setattr(shuffle.settings, "SHUFFLE_INTERVAL_HOURS", 6)
+    assert shuffle.shuffle_period() == "2026-10-22:2"
 
 
 def test_slot_rows_follow_their_catalogs_shuffle_setting():
     """Served ids are slots, which never matched a config entry before."""
-    assert daily_shuffle(shuffled_settings("watchly.theme"), "watchly.theme.2", list(ROW)) != ROW
-    assert daily_shuffle(shuffled_settings("watchly.item"), "watchly.item.mix.tt1", list(ROW)) != ROW
+    assert timed_shuffle(shuffled_settings("watchly.theme"), "watchly.theme.2", list(ROW)) != ROW
+    assert timed_shuffle(shuffled_settings("watchly.item"), "watchly.item.mix.tt1", list(ROW)) != ROW
 
 
 def test_rows_without_shuffle_are_left_alone():
-    assert daily_shuffle(get_default_settings(), "watchly.rec", list(ROW)) == ROW
+    assert timed_shuffle(get_default_settings(), "watchly.rec", list(ROW)) == ROW

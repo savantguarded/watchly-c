@@ -23,11 +23,11 @@ This is **Watchly C**, a personal fork of [Watchly](https://github.com/Timilsina
 | Nuvio + MDBList ratings | With Nuvio as the history source and MDBList also connected, MDBList ratings (and when they were given) are laid over the Nuvio history, so titles can be *loved* and *liked*, not only *watched*. Titles rated on MDBList but never played in Nuvio join the library. If MDBList is down, Nuvio is used alone. | `NUVIO_MDBLIST_RATINGS` (`True`) |
 | Weighted daily seeds | "Because you watched/loved" seeds are picked once a day, weighted toward titles rated 7+ in the last 6 months and how recently they were watched. The window widens when that pool is thin. Without ratings, the weight is recency, completion and rewatches. A seed isn't reused for about a week. | `WEIGHTED_ITEM_SEEDS` (`True`) |
 | Mixed rows | **Rows** on the configure page is the total across movies and series (default 4). Each row mixes both: the seed's own type from the stock item engine, and every third card the other type, matched on the seed's keywords and genres. | `MIXED_ITEM_ROWS` (`True`) |
-| Daily shuffle | Rows with **Shuffle** on change order once a day rather than per request (which clients never showed). Theme and item rows now honour the switch too. | `DAILY_SHUFFLE` (`True`) |
+| Timed shuffle | Rows with **Shuffle** on keep one order for an hour, then reshuffle, rather than reshuffling per request (which clients never showed, since they cache rows). Theme and item rows now honour the switch too. | `SHUFFLE_INTERVAL_HOURS` (`1`; `0` = stock) |
 | Daily refresh | A Vercel cron (`vercel.json`, 04:00 UTC / 05:00 Lagos) calls `/watchly-c/daily-refresh`, which refetches every account's library (stock Watchly only refetches Stremio libraries), picks the day's seeds and rebuilds every row. Runs once a day. Set `CRON_SECRET` in Vercel to lock the endpoint to the cron. | `CRON_SECRET` (unset) |
 | Upstream sync check | `.github/workflows/upstream-sync.yml` checks weekly for new upstream commits, merges them into an `upstream-sync` branch and runs the tests there. Merge that branch into `main` to update. | Actions tab |
 
-`DAILY_UTC_OFFSET_HOURS` (default `1`, Lagos) sets where "a day" starts for seeds, shuffles and the refresh.
+`DAILY_UTC_OFFSET_HOURS` (default `1`, Lagos) sets the local time used for daily seeds and shuffle windows.
 
 **Two Nuvio profiles.** Set each profile up separately on the configure page (not "Set up every profile", which shares one set of keys): profile 1 with Nuvio and MDBList connected and Nuvio as the source; profile 2 with Nuvio alone.
 

@@ -27,6 +27,7 @@ from app.services.tmdb.service import get_tmdb_service
 from app.services.token_store import token_store
 from app.services.user_cache import user_cache
 from app.services.warmup import warmup_service
+from app.watchly_c.mixed_rows import MIXED_ITEM_PREFIX, mixed_recommendations
 
 REFRESH_LOCK_PREFIX = "watchly:refreshlock:"
 # Long enough to cover a slow rebuild, short enough that a worker killed mid-refresh
@@ -356,6 +357,11 @@ class CatalogService:
         user_settings: UserSettings | None = None,
     ) -> list[dict[str, Any]]:
         """Route to appropriate recommendation service based on catalog ID."""
+        if catalog_id.startswith(MIXED_ITEM_PREFIX):
+            return await mixed_recommendations(
+                services["item"], catalog_id, content_type, watched_tmdb, watched_imdb, library_items, limit
+            )
+
         if any(catalog_id.startswith(p) for p in ("watchly.item.", "watchly.loved.", "watchly.watched.")):
             item_id = re.sub(r"^watchly\.(item|loved|watched)\.", "", catalog_id)
             item_service: ItemBasedService = services["item"]

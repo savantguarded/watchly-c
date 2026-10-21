@@ -3,6 +3,7 @@ import importlib
 from fastapi.testclient import TestClient
 
 from app.core.app import app
+from app.core.settings import MAX_ITEM_ROWS
 
 client = TestClient(app)
 app_module = importlib.import_module("app.core.app")
@@ -23,7 +24,7 @@ def test_configure_page_bootstraps_current_year_and_year_defaults(monkeypatch):
     assert response.status_code == 200
     html = response.text
     assert 'window.YEAR_RANGE_DEFAULTS = {"min": 1970, "max": ' in html
-    assert "window.MAX_ITEM_ROWS = 3;" in html
+    assert f"window.MAX_ITEM_ROWS = {MAX_ITEM_ROWS};" in html
     assert '"rows": 1' in html
     assert 'id="yearMin" min="1970"' in html
     assert 'id="yearMax" min="1970"' in html

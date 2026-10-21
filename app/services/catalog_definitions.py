@@ -13,6 +13,7 @@ from app.services.profile.service import ProfileService
 from app.services.row_generator import RowGeneratorService
 from app.services.tmdb.service import get_tmdb_service
 from app.services.user_cache import user_cache
+from app.watchly_c.mixed_rows import mixed_item_rows
 from app.watchly_c.seeds import choose_seeds
 
 
@@ -175,8 +176,15 @@ class DynamicCatalogService:
             )
             catalogs.extend(theme_catalogs)
 
-        for mtype in ["movie", "series"]:
-            await self._add_item_based_rows(catalogs, library_items, mtype, item_cfg, row_slots, token)
+        if app_settings.MIXED_ITEM_ROWS:
+            catalogs.extend(
+                await mixed_item_rows(
+                    library_items, item_cfg, token, self.build_catalog_entry, self._parse_item_last_watched
+                )
+            )
+        else:
+            for mtype in ["movie", "series"]:
+                await self._add_item_based_rows(catalogs, library_items, mtype, item_cfg, row_slots, token)
 
         catalogs.extend(get_catalogs_from_config(user_settings, "watchly.rec", "Top Picks for You", True, True))
         catalogs.extend(

@@ -4,11 +4,13 @@ from urllib.parse import urlparse
 
 from pydantic import BaseModel, Field, field_validator, model_validator
 
+from app.core.config import settings as app_config
 from app.services.poster_ratings.factory import PosterProvider
 
 # The seed pool is the 3 most-recent loved + 3 most-recent watched items. Capped
 # below the pool so a home screen is never mostly "Because you watched" rows.
-MAX_ITEM_ROWS = 3
+# Watchly C: 4, since mixed rows count in total rather than per type.
+MAX_ITEM_ROWS = 4
 
 
 class CatalogConfig(BaseModel):
@@ -171,6 +173,18 @@ CATALOG_DESCRIPTIONS = {
     ),
 }
 
+if app_config.WEIGHTED_ITEM_SEEDS:
+    CATALOG_DESCRIPTIONS["watchly.item"] = (
+        "Recommends items similar to one you watched or loved. Seeds are picked once a day, weighted toward"
+        " titles you rated highly in the last 6 months and how recently you watched them, and a seed isn't"
+        " reused for about a week."
+    )
+if app_config.MIXED_ITEM_ROWS:
+    CATALOG_DESCRIPTIONS["watchly.item"] += (
+        " Rows is the total across movies and series, and each row mixes both: every third card is the other"
+        " type, matched on the seed's keywords and genres."
+    )
+
 
 def get_default_settings() -> UserSettings:
     return UserSettings(
@@ -193,6 +207,7 @@ def get_default_settings() -> UserSettings:
                 enabled_series=True,
                 display_at_home=True,
                 shuffle=False,
+                rows=MAX_ITEM_ROWS if app_config.MIXED_ITEM_ROWS else 1,
             ),
             CatalogConfig(
                 id="watchly.theme",

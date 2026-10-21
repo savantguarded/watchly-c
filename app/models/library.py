@@ -46,6 +46,9 @@ class StremioLibraryItem(BaseModel):
     is_loved: bool = Field(default=False, alias="_is_loved")
     is_liked: bool = Field(default=False, alias="_is_liked")
     interest_score: float = Field(default=0.0, alias="_interest_score")
+    # Carried from external history so seed picking can weight by rating and when it was given.
+    rating: float | None = Field(default=None, alias="_rating")
+    rated_at: datetime | None = Field(default=None, alias="_rated_at")
 
     class Config:
         populate_by_name = True

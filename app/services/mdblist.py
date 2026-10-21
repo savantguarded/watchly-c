@@ -61,10 +61,12 @@ class MDBListService:
         )
 
         ratings: dict[str, float] = {}
+        rated_at: dict[str, datetime | None] = {}
         for entry in rated["movies"] + rated["shows"]:
             imdb_id = self._imdb_id(entry)
             if imdb_id and entry.get("rating"):
                 ratings[imdb_id] = float(entry["rating"])
+                rated_at[imdb_id] = self._parse_date(entry.get("rated_at"))
 
         items: list[WatchHistoryItem] = []
         seen: set[str] = set()
@@ -86,6 +88,7 @@ class MDBListService:
                         watch_count=1,
                         completion=1.0,
                         last_watched=self._parse_date(entry.get("last_watched_at") or entry.get("watched_at")),
+                        rated_at=rated_at.get(imdb_id),
                         source="mdblist",
                     )
                 )
@@ -106,12 +109,36 @@ class MDBListService:
                         watch_count=0,
                         completion=0.0,
                         last_watched=self._parse_date(entry.get("rated_at")),
+                        rated_at=rated_at.get(imdb_id),
                         source="mdblist",
                     )
                 )
 
         logger.info(f"MDBList history: {len(items)} items ({len(ratings)} rated)")
         return WatchHistory(items=items, source="mdblist")
+
+    async def get_ratings(self, api_key: str) -> dict[str, WatchHistoryItem]:
+        """Rated titles keyed on IMDb id, for laying ratings over another source's history."""
+        rated = await self._get_all_pages("/sync/ratings", api_key)
+        items: dict[str, WatchHistoryItem] = {}
+        for mtype, key in (("movie", "movies"), ("series", "shows")):
+            for entry in rated[key]:
+                imdb_id = self._imdb_id(entry)
+                if not imdb_id or imdb_id in items or not entry.get("rating"):
+                    continue
+                when = self._parse_date(entry.get("rated_at"))
+                items[imdb_id] = WatchHistoryItem(
+                    imdb_id=imdb_id,
+                    type=mtype,
+                    name=self._media(entry).get("title", ""),
+                    rating=float(entry["rating"]),
+                    watch_count=0,
+                    completion=0.0,
+                    last_watched=when,
+                    rated_at=when,
+                    source="mdblist",
+                )
+        return items
 
     @staticmethod
     def _media(entry: dict[str, Any]) -> dict[str, Any]:

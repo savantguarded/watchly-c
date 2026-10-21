@@ -149,3 +149,19 @@ def test_an_mdblist_outage_keeps_the_key_and_yields_no_history(monkeypatch):
     assert history is None
     assert not revoked and not missing
     assert cleared == []
+
+
+def test_watched_items_keep_when_they_were_rated():
+    history = asyncio.run(service_with(FakeClient()).get_history(GOOD_KEY))
+
+    heat = next(item for item in history.items if item.imdb_id == "tt0113277")
+    assert heat.rated_at is not None and heat.rated_at.isoformat() == "2026-01-06T00:00:00+00:00"
+
+
+def test_ratings_alone_are_keyed_on_imdb_id_with_their_date():
+    ratings = asyncio.run(service_with(FakeClient()).get_ratings(GOOD_KEY))
+
+    assert set(ratings) == {"tt0113277", "tt0000001"}
+    assert ratings["tt0113277"].rating == 9.0
+    assert ratings["tt0000001"].type == "series"
+    assert ratings["tt0000001"].rated_at.isoformat() == "2025-12-01T00:00:00+00:00"

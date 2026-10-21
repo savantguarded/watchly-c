@@ -135,7 +135,9 @@ async def fetch_library_for_source(
 
         profile_service = ProfileService()
         external = await profile_service.fetch_external_library(source, user_settings, token)
-        if external is not None:
+        # An empty history reads as a user who has watched nothing, and caching it
+        # would blank every row until the cache next expired.
+        if external is not None and not external.is_empty():
             logger.info(
                 f"[{redact_token(token)}] Built library from {source}: "
                 f"{len(external.loved)} loved, {len(external.liked)} liked, "

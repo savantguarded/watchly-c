@@ -6,6 +6,7 @@ from typing import Any
 import httpx
 from loguru import logger
 
+from app.core.config import settings as app_config
 from app.core.constants import NUVIO_REFRESH_LOCK_KEY
 from app.core.security import redact_token
 from app.core.settings import UserSettings, resolve_tmdb_api_key
@@ -24,6 +25,7 @@ from app.services.stremio.library import stremio_library_to_watch_history, watch
 from app.services.tmdb.service import get_tmdb_service
 from app.services.token_store import token_store
 from app.services.user_cache import user_cache
+from app.watchly_c.ratings import add_mdblist_ratings
 
 
 class ProfileService:
@@ -380,6 +382,8 @@ class ProfileService:
         elif source == "nuvio":
             if user_settings and user_settings.nuvio_access_token and user_settings.nuvio_profile_id:
                 watch_history, token_revoked = await self._fetch_nuvio_history(token, user_settings)
+                if watch_history is not None and app_config.NUVIO_MDBLIST_RATINGS and user_settings.mdblist_api_key:
+                    watch_history = await add_mdblist_ratings(watch_history, user_settings.mdblist_api_key)
             else:
                 token_missing = True
 

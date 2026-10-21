@@ -109,3 +109,14 @@ def test_an_empty_external_history_is_not_cached_as_the_library(monkeypatch):
     settings = get_default_settings()
 
     assert asyncio.run(context.fetch_library_for_source("nuvio", settings, "tok", None, None)) is None
+
+
+def test_ratings_survive_the_library_cache_round_trip(monkeypatch):
+    fake = FakeMDBList({"tt1": rated("tt1", 9.5)})
+    monkeypatch.setattr(ratings_module, "mdblist_service", fake)
+    history = WatchHistory(items=[nuvio_item("tt1")], source="nuvio")
+    library = watch_history_to_library_collection(asyncio.run(add_mdblist_ratings(history, KEY)))
+
+    restored = LibraryCollection.model_validate_json(library.model_dump_json(by_alias=True))
+
+    assert restored.loved[0].rating == 9.5 and restored.loved[0].rated_at == RATED_AT

@@ -1,0 +1,97 @@
+name: Upstream sync check
+# Watchly C: once a week, see whether upstream Watchly has moved on. If it has,
+# merge it into an `upstream-sync` branch, run the tests there, and report. The run
+# is marked failed while upstream is ahead, which is what makes GitHub email the
+# owner; the report is in the run summary, and in an issue when Issues are enabled.
+# Nothing reaches main, and so nothing deploys, until that branch is merged.
+on:
+  schedule:
+    - cron: "23 5 * * 1"
+  workflow_dispatch:
+permissions:
+  contents: write
+  issues: write
+concurrency:
+  group: upstream-sync
+  cancel-in-progress: false
+jobs:
+  check:
+    if: github.repository != 'TimilsinaBimal/Watchly'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+      - name: Merge upstream into upstream-sync
+        id: merge
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git remote add upstream https://github.com/TimilsinaBimal/Watchly.git
+          git fetch --no-tags upstream main
+          behind=$(git rev-list --count HEAD..upstream/main)
+          echo "behind=$behind" >> "$GITHUB_OUTPUT"
+          echo "upstream_version=$(git show upstream/main:app/core/version.py | grep -oP '__version__\s*=\s*"\K[^"]*')" >> "$GITHUB_OUTPUT"
+          if [ "$behind" = "0" ]; then
+            exit 0
+          fi
+          git checkout -B upstream-sync
+          if git merge --no-edit upstream/main; then
+            echo "result=clean" >> "$GITHUB_OUTPUT"
+            git push --force origin upstream-sync
+          else
+            git diff --name-only --diff-filter=U > conflicts.txt
+            git merge --abort
+            echo "result=conflicts" >> "$GITHUB_OUTPUT"
+          fi
+      - uses: astral-sh/setup-uv@v6
+        if: steps.merge.outputs.result == 'clean'
+      - name: Run the tests on the merge
+        id: tests
+        if: steps.merge.outputs.result == 'clean'
+        continue-on-error: true
+        env:
+          TMDB_API_KEY: ci-placeholder
+        run: |
+          # The default shell runs with pipefail, so a failing pytest fails this step.
+          uv run --with pytest python -m pytest tests/ -q 2>&1 | tail -n 30 > tests.txt
+      - name: Report
+        if: steps.merge.outputs.behind != '0'
+        uses: actions/github-script@v8
+        env:
+          BEHIND: ${{ steps.merge.outputs.behind }}
+          RESULT: ${{ steps.merge.outputs.result }}
+          TESTS: ${{ steps.tests.outcome }}
+          UPSTREAM_VERSION: ${{ steps.merge.outputs.upstream_version }}
+        with:
+          script: |
+            const fs = require('fs');
+            const read = (f) => (fs.existsSync(f) ? fs.readFileSync(f, 'utf8').trim() : '');
+            const { BEHIND, RESULT, TESTS, UPSTREAM_VERSION } = process.env;
+            let body = `Upstream Watchly is **${BEHIND} commit(s)** ahead (upstream version ${UPSTREAM_VERSION}).\n\n`;
+            if (RESULT === 'clean') {
+              const passed = TESTS === 'success';
+              body += `The merge is clean and is on the \`upstream-sync\` branch. Tests ${passed ? 'pass' : '**fail**'}.\n\n`;
+              body += passed
+                ? 'Open a pull request from `upstream-sync` into `main` and merge it to update.'
+                : 'Tests need fixing on `upstream-sync` before it is merged.';
+              body += `\n\n<details><summary>Test output</summary>\n\n\`\`\`\n${read('tests.txt')}\n\`\`\`\n</details>`;
+            } else {
+              body += `The merge **conflicts** in these files, so it needs doing by hand:\n\n\`\`\`\n${read('conflicts.txt')}\n\`\`\``;
+            }
+            await core.summary.addRaw(body).write();
+
+            const repo = { owner: context.repo.owner, repo: context.repo.repo };
+            const title = 'Upstream Watchly has new changes';
+            try {
+              const { data: open } = await github.rest.issues.listForRepo({ ...repo, state: 'open' });
+              const existing = open.find((i) => i.title === title);
+              if (existing) {
+                await github.rest.issues.update({ ...repo, issue_number: existing.number, body });
+              } else {
+                await github.rest.issues.create({ ...repo, title, body });
+              }
+            } catch (e) {
+              core.info(`No issue written (Issues may be off for this repo): ${e.status}`);
+            }
+            core.setFailed(`Upstream is ${BEHIND} commit(s) ahead; see the summary.`);

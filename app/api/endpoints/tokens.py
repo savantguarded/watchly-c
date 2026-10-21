@@ -3,6 +3,7 @@ from fastapi.responses import JSONResponse
 from loguru import logger
 
 from app.api.models.tokens import TokenRequest, TokenResponse
+from app.core.config import settings
 from app.core.security import redact_token
 from app.services.auth import auth_service
 from app.services.warmup import warmup_service
@@ -16,7 +17,8 @@ async def create_token(payload: TokenRequest) -> TokenResponse:
     # Warming is a library fetch plus both profile builds, so it runs behind the
     # response. The configure page follows it via GET /{token}/status.
     await warmup_service.mark_pending(response.token)
-    warmup_service.enqueue(response.token, auth_key, user_settings)
+    if not settings.INLINE_WARMUP:
+        warmup_service.enqueue(response.token, auth_key, user_settings)
     logger.info(f"[{redact_token(response.token)}] Token stored, warm-up enqueued")
     return response
 

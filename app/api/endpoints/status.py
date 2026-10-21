@@ -1,8 +1,10 @@
 from fastapi import APIRouter, HTTPException
 
+from app.core.config import settings
 from app.core.security import TOKEN_PATTERN
 from app.services.token_store import token_store
 from app.services.warmup import warmup_service
+from app.watchly_c.inline_warmup import warm_if_pending
 
 router = APIRouter(tags=["Status"])
 
@@ -17,4 +19,7 @@ async def warm_status(token: str):
     if not TOKEN_PATTERN.match(token):
         raise HTTPException(status_code=400, detail="Malformed token.")
 
-    return await warmup_service.get_status(await token_store.resolve_alias(token))
+    token = await token_store.resolve_alias(token)
+    if settings.INLINE_WARMUP:
+        await warm_if_pending(token)
+    return await warmup_service.get_status(token)

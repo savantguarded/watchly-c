@@ -1,5 +1,6 @@
 from typing import Literal
 
+from pydantic import AliasChoices, Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from app.core.version import __version__
@@ -67,6 +68,11 @@ class Settings(BaseSettings):
     DAILY_UTC_OFFSET_HOURS: float = 1.0
     # Vercel sends this as a Bearer token on cron calls once it is set in the project.
     CRON_SECRET: str | None = None
+    # Run the setup warm-up inside the configure page's status poll rather than behind
+    # the save response. Vercel freezes a function once it has answered, so a warm-up
+    # left running there never gets past "Saving your configuration". On by itself on
+    # Vercel, which sets VERCEL=1 at runtime.
+    INLINE_WARMUP: bool = Field(default=False, validation_alias=AliasChoices("INLINE_WARMUP", "VERCEL"))
 
 
 settings = Settings()

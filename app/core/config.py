@@ -60,6 +60,7 @@ class Settings(BaseSettings):
     NUVIO_MDBLIST_RATINGS: bool = True
     WEIGHTED_ITEM_SEEDS: bool = True
     MIXED_ITEM_ROWS: bool = True
+    WATCHED_TMDB_IDS: bool = True
     # Rows with Shuffle on keep one order for this many hours, then reshuffle. 0 is
     # stock Watchly: a new order on every request.
     SHUFFLE_INTERVAL_HOURS: int = 1

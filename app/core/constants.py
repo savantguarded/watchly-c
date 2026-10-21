@@ -35,6 +35,8 @@ MANIFEST_KEY: str = "watchly:manifest:{version}:{token}"
 SEED_LOG_KEY: str = "watchly:c:seeds:{token}"
 # Watchly C: one daily refresh run per day, however often the cron fires.
 DAILY_REFRESH_RUN_KEY: str = "watchly:c:daily_refresh:{day}"
+# Watchly C: IMDb id -> "movie:<tmdb id>" / "tv:<tmdb id>", shared by every account.
+IMDB_TO_TMDB_KEY: str = "watchly:c:imdb_tmdb"
 
 # The manifest is rebuilt on save and by the catalog updater, so this is only a
 # backstop against an invalidation being missed.

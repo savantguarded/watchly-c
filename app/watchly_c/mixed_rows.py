@@ -22,6 +22,7 @@ from app.services.recommendation.utils import resolve_tmdb_id
 from app.services.tmdb.genre import movie_genres, series_genres
 from app.services.tmdb.service import TMDBService
 from app.watchly_c.seeds import choose_seeds
+from app.watchly_c.watched_tmdb import watched_tmdb_ids
 
 # A mixed row's id carries its seed, so a client still on yesterday's manifest gets
 # the row its title promises. The seed changes once a day, so the cache key does too.
@@ -191,7 +192,8 @@ async def _cross_type(
                 hits[item["id"]] = hits.get(item["id"], 0) + 1
 
     ranked = sorted(found.values(), key=lambda i: -hits[i["id"]])
-    ranked = filter_by_genres(filter_items_by_settings(ranked, user_settings), set(), excluded)
+    watched_other = await watched_tmdb_ids(library, other, user_settings) if settings.WATCHED_TMDB_IDS else set()
+    ranked = filter_by_genres(filter_items_by_settings(ranked, user_settings), watched_other, excluded)
     # Over-fetch for what the watched filter takes out; truncate before the costly enrichment.
     enriched = await RecommendationMetadata.fetch_batch(tmdb_service, ranked[: count * 2], other, user_settings)
     return filter_watched_by_imdb(enriched, library.all_imdb_ids() | watched_imdb)[:count]

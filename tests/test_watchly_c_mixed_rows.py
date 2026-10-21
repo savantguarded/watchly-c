@@ -128,6 +128,11 @@ async def fake_fetch_batch(tmdb_service, items, media_type, user_settings=None):
 def patched(monkeypatch):
     monkeypatch.setattr(mixed_rows.RecommendationMetadata, "fetch_batch", fake_fetch_batch)
 
+    async def no_watched(library, content_type, user_settings):
+        return set()
+
+    monkeypatch.setattr(mixed_rows, "watched_tmdb_ids", no_watched)
+
 
 def run_mixed(user_settings, tmdb, library=LIBRARY, limit=9):
     same = [meta(f"tt{100 + n}", "movie") for n in range(10)]
@@ -179,3 +184,14 @@ def test_mixed_ids_pass_validation_and_slot_resolution():
     catalog_service._validate_inputs("tok", "series", catalog_id)
 
     assert asyncio.run(catalog_service._resolve_slot("tok", "series", catalog_id)) == catalog_id
+
+
+def test_watched_titles_of_the_other_type_are_dropped_before_the_cut(patched, monkeypatch):
+    async def watched(library, content_type, user_settings):
+        return {3} if content_type == "series" else set()
+
+    monkeypatch.setattr(mixed_rows, "watched_tmdb_ids", watched)
+    out, _ = run_mixed(get_default_settings(), FakeTMDB())
+
+    assert "tt9003" not in {m["id"] for m in out}
+    assert [m["id"] for m in out if m["type"] == "series"][0] == "tt9001"

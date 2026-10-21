@@ -26,6 +26,7 @@ from app.services.tmdb.service import get_tmdb_service
 from app.services.token_store import token_store
 from app.services.user_cache import user_cache
 from app.watchly_c.ratings import add_mdblist_ratings
+from app.watchly_c.watched_tmdb import watched_tmdb_ids
 
 
 class ProfileService:
@@ -242,6 +243,8 @@ class ProfileService:
             profile, watched_tmdb, watched_imdb = await self._build_from_external_source(
                 source, user_settings, content_type, library_items, token=token
             )
+            if app_config.WATCHED_TMDB_IDS and user_settings:
+                watched_tmdb = watched_tmdb | await watched_tmdb_ids(library_items, content_type, user_settings)
         else:
             profile, watched_tmdb, watched_imdb = await self.build_profile_incremental(
                 library_items,

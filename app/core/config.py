@@ -60,8 +60,9 @@ class Settings(BaseSettings):
     WEIGHTED_ITEM_SEEDS: bool = True
     MIXED_ITEM_ROWS: bool = True
     DAILY_SHUFFLE: bool = True
-    # The day boundary for daily seeds, shuffles and the daily refresh.
-    DAILY_TIMEZONE: str = "Africa/Lagos"
+    # Hours from UTC where "a day" starts for daily seeds and shuffles. An offset rather
+    # than a zone name: zone data isn't guaranteed on every host, and Lagos has no DST.
+    DAILY_UTC_OFFSET_HOURS: float = 1.0
     # Vercel sends this as a Bearer token on cron calls once it is set in the project.
     CRON_SECRET: str | None = None
 

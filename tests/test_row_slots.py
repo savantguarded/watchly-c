@@ -57,6 +57,14 @@ def test_item_slot_expands_to_its_seed(fake_redis):
     assert resolve("watchly.item.1") == "watchly.item.tt0468569"
 
 
+def test_mixed_slot_expands_to_its_typed_seed(fake_redis):
+    asyncio.run(user_cache.set_row_map(TOKEN, "movie", {"item.mix.2": "series.tt0903747"}))
+
+    assert resolve("watchly.item.mix.2") == "watchly.item.mix.series.tt0903747"
+    assert resolve("watchly.item.mix.3") is None
+    assert resolve("watchly.item.mix.tt0468569") == "watchly.item.mix.tt0468569"
+
+
 def test_the_id_survives_a_definition_change(fake_redis):
     """The whole point: an LLM rebuild or a re-randomised item seed changes what the
     row means without changing the id, so the cache key stays put."""

@@ -179,7 +179,12 @@ class DynamicCatalogService:
         if app_settings.MIXED_ITEM_ROWS:
             catalogs.extend(
                 await mixed_item_rows(
-                    library_items, item_cfg, token, self.build_catalog_entry, self._parse_item_last_watched
+                    library_items,
+                    item_cfg,
+                    token,
+                    self.build_catalog_entry,
+                    self._parse_item_last_watched,
+                    row_slots,
                 )
             )
         else:

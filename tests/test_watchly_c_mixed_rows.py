@@ -38,19 +38,50 @@ def test_rows_are_counted_in_total_not_per_type():
     assert all(r["id"].startswith(MIXED_ITEM_PREFIX) for r in rows)
 
 
-def test_each_row_is_declared_under_its_seeds_type_and_labelled_from_it():
+def slotted_rows(config: CatalogConfig, library: LibraryCollection = LIBRARY) -> tuple[list[dict], dict]:
+    service = DynamicCatalogService()
+    slots: dict[str, dict[str, str]] = {}
+    rows = asyncio.run(
+        mixed_item_rows(library, config, None, service.build_catalog_entry, service._parse_item_last_watched, slots)
+    )
+    return rows, slots
+
+
+def test_rows_are_numbered_slots_under_one_type_so_their_ids_never_move():
+    rows, slots = slotted_rows(CatalogConfig(id="watchly.item", rows=4))
+
+    assert [r["id"] for r in rows] == [f"{MIXED_ITEM_PREFIX}{n}" for n in range(1, 5)]
+    assert {r["type"] for r in rows} == {"movie"}
+    assert set(slots) == {"movie"}
+
+
+def test_each_slot_maps_to_its_seed_and_type_and_is_labelled_from_it():
     types = {i.id: i.type for i in LIBRARY.all_items()}
-    for row in rows_for(CatalogConfig(id="watchly.item", rows=4)):
-        seed = row["id"].removeprefix(MIXED_ITEM_PREFIX)
-        assert row["type"] == types[seed]
+    rows, slots = slotted_rows(CatalogConfig(id="watchly.item", rows=4))
+    for row in rows:
+        slot = row["id"].removeprefix(MIXED_ITEM_PREFIX)
+        seed_type, seed = slots["movie"][f"item.mix.{slot}"].split(".", 1)
+        assert seed_type == types[seed]
         expected = "Because you loved" if seed in {"tt1", "tt2"} else "Because you watched"
         assert row["name"] == f"{expected} Title {seed}"
 
 
-def test_a_disabled_type_gives_no_seeds():
-    rows = rows_for(CatalogConfig(id="watchly.item", rows=4, enabled_series=False))
+def test_series_only_declares_the_slots_under_series():
+    rows, slots = slotted_rows(CatalogConfig(id="watchly.item", rows=4, enabled_movie=False))
 
-    assert rows and all(r["type"] == "movie" for r in rows)
+    assert rows and {r["type"] for r in rows} == {"series"}
+    assert set(slots) == {"series"}
+
+
+def test_resolved_ids_parse_to_seed_type_and_id_and_legacy_ids_keep_the_request_type():
+    assert mixed_rows.parse_mixed_id(f"{MIXED_ITEM_PREFIX}series.tt2", "movie") == ("series", "tt2")
+    assert mixed_rows.parse_mixed_id(f"{MIXED_ITEM_PREFIX}tt2", "series") == ("series", "tt2")
+
+
+def test_a_disabled_type_gives_no_seeds():
+    rows, slots = slotted_rows(CatalogConfig(id="watchly.item", rows=4, enabled_series=False))
+
+    assert rows and all(d.startswith("movie.") for d in slots["movie"].values())
 
 
 def test_a_disabled_catalog_gives_no_rows():

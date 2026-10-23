@@ -24,8 +24,11 @@ from app.services.tmdb.service import TMDBService
 from app.watchly_c.seeds import choose_seeds
 from app.watchly_c.watched_tmdb import watched_tmdb_ids
 
-# A mixed row's id carries its seed, so a client still on yesterday's manifest gets
-# the row its title promises. The seed changes once a day, so the cache key does too.
+# Mixed rows are served as stable slots (`watchly.item.mix.1`..`.4`), all declared under
+# one type, so a client that orders its home screen by catalog id (Nuvio does) keeps each
+# row where the user put it. The slot map holds what a slot points at today, as
+# `<seed type>.<seed id>`. Ids that carry a seed directly (`watchly.item.mix.tt123`) are
+# from manifests installed before this and still resolve.
 MIXED_ITEM_PREFIX = "watchly.item.mix."
 OTHER_TYPE = {"movie": "series", "series": "movie"}
 # Every third card in a row comes from the other type.
@@ -60,10 +63,11 @@ async def mixed_item_rows(
     token: str | None,
     build_entry: Callable[..., dict[str, Any]],
     last_watched: Callable[[StremioLibraryItem], datetime],
+    row_slots: dict[str, dict[str, str]] | None = None,
 ) -> list[dict[str, Any]]:
     """`item_config.rows` "Because you watched/loved" rows in all, from seeds of either
-    type. Each row is declared under its seed's type, so it opens and labels like a
-    stock row, and its cards mix movies and series."""
+    type. Every row is declared under the same type and a numbered slot, so its id never
+    changes when the seed does; its cards mix movies and series either way."""
     if not item_config or not item_config.enabled:
         return []
     types = {t for t, on in (("movie", item_config.enabled_movie), ("series", item_config.enabled_series)) if on}
@@ -76,13 +80,27 @@ async def mixed_item_rows(
         watched = sorted((i for i in pool if not i.is_loved), key=last_watched, reverse=True)[:3]
         seeds = random.sample(loved + watched, k=min(item_config.rows, len(loved + watched)))
 
+    home_type = "movie" if item_config.enabled_movie else "series"
     rows = []
-    for seed in seeds:
+    for slot, seed in enumerate(seeds, start=1):
         label = "Because you loved" if seed.is_loved else "Because you watched"
         entry = build_entry(seed, label, "watchly.item", item_config.display_at_home)
-        entry["id"] = f"{MIXED_ITEM_PREFIX}{seed.id}"
+        if row_slots is not None:
+            row_slots.setdefault(home_type, {})[f"item.mix.{slot}"] = f"{entry['type']}.{seed.id}"
+        entry["id"] = f"{MIXED_ITEM_PREFIX}{slot}"
+        entry["type"] = home_type
         rows.append(entry)
     return rows
+
+
+def parse_mixed_id(catalog_id: str, content_type: str) -> tuple[str, str]:
+    """(seed type, seed id) from a resolved mixed id. Pre-slot ids carry no type: their
+    row was declared under the seed's own type, so the request's type is the seed's."""
+    rest = catalog_id.removeprefix(MIXED_ITEM_PREFIX)
+    for mtype in ("movie", "series"):
+        if rest.startswith(f"{mtype}."):
+            return mtype, rest.removeprefix(f"{mtype}.")
+    return content_type, rest
 
 
 async def mixed_recommendations(
@@ -96,7 +114,7 @@ async def mixed_recommendations(
 ) -> list[dict[str, Any]]:
     """The seed's own-type picks from the stock item engine, with every third card
     swapped for a title of the other type that shares the seed's keywords or genres."""
-    seed_id = catalog_id.removeprefix(MIXED_ITEM_PREFIX)
+    seed_type, seed_id = parse_mixed_id(catalog_id, seed_type)
     user_settings: UserSettings = item_service.user_settings
     other = OTHER_TYPE[seed_type]
     config = _item_config(user_settings)

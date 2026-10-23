@@ -332,6 +332,14 @@ class CatalogService:
         the installed client still asks for the dropped slot. Passing the id through
         instead would hand the item engine a bare "3", which it reads as TMDB id 3.
         """
+        mixed = re.match(r"^watchly\.item\.mix\.(\d+)$", catalog_id)
+        if mixed:
+            definition = (await user_cache.get_row_map(token, content_type)).get(f"item.mix.{mixed.group(1)}")
+            if not definition:
+                logger.warning(f"[{redact_token(token)}] No row definition for {catalog_id} ({content_type})")
+                return None
+            return f"watchly.item.mix.{definition}"
+
         match = re.match(r"^watchly\.(theme|item)\.(\d+)$", catalog_id)
         if not match:
             return catalog_id

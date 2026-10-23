@@ -224,13 +224,15 @@ class CatalogService:
             logger.debug(f"Returning {len(recommendations)} items for {content_type}")
 
             cleaned = [m for m in (clean_meta(m) for m in recommendations) if m is not None]
-            cleaned = shuffle_data_if_needed(ctx.user_settings, catalog_id, cleaned)
-
-            data = {"metas": cleaned}
             if cleaned:
-                await user_cache.set_catalog(ctx.token, content_type, catalog_id, data, settings.CATALOG_STALE_TTL)
+                # Cached unshuffled: a cache hit shuffles what it reads, so a shuffled
+                # copy here would serve a different order on the first request than on
+                # every later one in the same window.
+                await user_cache.set_catalog(
+                    ctx.token, content_type, catalog_id, {"metas": cleaned}, settings.CATALOG_STALE_TTL
+                )
 
-            return data, headers
+            return {"metas": shuffle_data_if_needed(ctx.user_settings, catalog_id, cleaned)}, headers
 
         except Exception as e:
             logger.error(f"[{redact_token(ctx.token)}] Failed to generate catalog: {e}")

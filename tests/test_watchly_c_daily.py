@@ -6,6 +6,9 @@ from fastapi.testclient import TestClient
 
 from app.core.app import app
 from app.core.settings import get_default_settings
+from app.services.recommendation import catalog_service as cs_module
+from app.services.recommendation.catalog_service import catalog_service
+from app.services.recommendation.catalog_utils import shuffle_data_if_needed
 from app.watchly_c import daily_refresh, shuffle
 from app.watchly_c.shuffle import timed_shuffle
 
@@ -162,3 +165,38 @@ def test_slot_rows_follow_their_catalogs_shuffle_setting():
 
 def test_rows_without_shuffle_are_left_alone():
     assert timed_shuffle(get_default_settings(), "watchly.rec", list(ROW)) == ROW
+
+
+def test_a_freshly_built_row_is_served_in_the_same_order_as_its_cache_hits(monkeypatch):
+    monkeypatch.setattr(shuffle, "shuffle_period", lambda: "2026-10-22:14")
+    user_settings = shuffled_settings("watchly.item")
+    stored = {}
+
+    async def no_slot_change(token, content_type, catalog_id):
+        return catalog_id
+
+    async def cached_profile(token, content_type):
+        return None, set(), set()
+
+    async def recommendations(**kwargs):
+        return [{**meta, "type": "movie", "name": meta["id"]} for meta in ROW]
+
+    async def remember(token, content_type, catalog_id, data, ttl):
+        stored["metas"] = list(data["metas"])
+
+    monkeypatch.setattr(catalog_service, "_resolve_slot", no_slot_change)
+    monkeypatch.setattr(catalog_service, "_initialize_services", lambda settings: {"profile": None})
+    monkeypatch.setattr(catalog_service, "_get_recommendations", recommendations)
+    monkeypatch.setattr(cs_module.user_cache, "get_profile_and_watched_sets", cached_profile)
+    monkeypatch.setattr(cs_module.user_cache, "set_catalog", remember)
+
+    class Ctx:
+        token = "tok_shuffle"
+        library = bundle = auth_key = None
+
+    Ctx.user_settings = user_settings
+    built, _ = asyncio.run(catalog_service._build_catalog(Ctx(), "movie", "watchly.item.mix.1", {}))
+    hit = shuffle_data_if_needed(user_settings, "watchly.item.mix.1", list(stored["metas"]))
+
+    assert [m["id"] for m in built["metas"]] == [m["id"] for m in hit]
+    assert [m["id"] for m in stored["metas"]] == [m["id"] for m in ROW]

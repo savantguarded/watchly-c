@@ -96,6 +96,17 @@ def test_invalidation_forces_the_next_request_to_rebuild(fake_redis, count_build
     assert len(count_builds) == 2
 
 
+def test_a_failed_row_build_is_served_but_not_cached(fake_redis, count_builds, monkeypatch):
+    async def failing(self, library, user_settings, token=None):
+        raise RuntimeError("tmdb down")
+
+    monkeypatch.setattr(manifest_module.DynamicCatalogService, "get_dynamic_catalogs", failing)
+    served = asyncio.run(manifest_service.get_manifest_for_token(TOKEN))
+
+    assert served["catalogs"] == []
+    assert not any("manifest" in key for key in fake_redis.data)
+
+
 def test_cache_key_is_scoped_to_the_addon_version(fake_redis):
     """The manifest embeds the addon version, so a deploy must not keep serving a
     manifest that advertises the previous one."""

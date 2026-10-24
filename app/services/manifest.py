@@ -118,6 +118,7 @@ class ManifestService:
         if profile_name:
             base_manifest["name"] = self._profiled_addon_name(profile_name)
         fetched_catalogs: list[dict[str, Any]] = []
+        build_failed = False
         try:
             # Trakt/Simkl-only accounts have no Stremio auth key but their
             # external library still drives the dynamic catalogs.
@@ -130,6 +131,7 @@ class ManifestService:
         except Exception as e:
             logger.exception(f"[{redact_token(token)}] Dynamic catalog build failed: {e}")
             fetched_catalogs = []
+            build_failed = True
         finally:
             await ctx.close()
 
@@ -147,7 +149,10 @@ class ManifestService:
         if sorted_catalogs:
             base_manifest["catalogs"] = sorted_catalogs
 
-        await user_cache.set_manifest(token, base_manifest)
+        # A manifest missing its rows would stand until the next daily rebuild, and Nuvio
+        # forgets the saved home position of any row the user reorders around meanwhile.
+        if not build_failed:
+            await user_cache.set_manifest(token, base_manifest)
         return base_manifest
 
     @staticmethod

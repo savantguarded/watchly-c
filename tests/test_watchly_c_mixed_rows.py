@@ -226,3 +226,11 @@ def test_watched_titles_of_the_other_type_are_dropped_before_the_cut(patched, mo
 
     assert "tt9003" not in {m["id"] for m in out}
     assert [m["id"] for m in out if m["type"] == "series"][0] == "tt9001"
+
+
+def test_a_short_seed_pool_still_declares_every_slot_and_maps_only_the_filled_ones():
+    short = LibraryCollection(loved=[lib_item("tt1", "movie", True)], watched=[lib_item("tt3", "movie")], source="nuvio")
+    rows, slots = slotted_rows(CatalogConfig(id="watchly.item", rows=4), short)
+
+    assert [r["id"] for r in rows] == [f"{MIXED_ITEM_PREFIX}{n}" for n in range(1, 5)]
+    assert set(slots["movie"]) == {"item.mix.1", "item.mix.2"}

@@ -7,6 +7,7 @@ from typing import Any
 from loguru import logger
 
 from app.core.config import settings
+from app.core.constants import DISCOVER_ONLY_EXTRA
 from app.core.settings import CatalogConfig, UserSettings
 from app.models.library import LibraryCollection, StremioLibraryItem
 from app.services.recommendation.filtering import (
@@ -21,6 +22,7 @@ from app.services.recommendation.metadata import RecommendationMetadata
 from app.services.recommendation.utils import resolve_tmdb_id
 from app.services.tmdb.genre import movie_genres, series_genres
 from app.services.tmdb.service import TMDBService
+from app.watchly_c.row_slots import fill_slots
 from app.watchly_c.seeds import choose_seeds
 from app.watchly_c.watched_tmdb import watched_tmdb_ids
 
@@ -90,6 +92,9 @@ async def mixed_item_rows(
         entry["id"] = f"{MIXED_ITEM_PREFIX}{slot}"
         entry["type"] = home_type
         rows.append(entry)
+    if settings.FIXED_ROW_SLOTS:
+        extra = [] if item_config.display_at_home else DISCOVER_ONLY_EXTRA
+        rows = fill_slots(rows, MIXED_ITEM_PREFIX, {home_type: item_config.rows}, item_config.name, extra)
     return rows
 
 

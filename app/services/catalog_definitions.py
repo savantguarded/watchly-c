@@ -14,6 +14,7 @@ from app.services.row_generator import RowGeneratorService
 from app.services.tmdb.service import get_tmdb_service
 from app.services.user_cache import user_cache
 from app.watchly_c.mixed_rows import mixed_item_rows
+from app.watchly_c.row_slots import THEME_SLOTS, fill_slots
 from app.watchly_c.seeds import choose_seeds
 
 
@@ -270,6 +271,9 @@ class DynamicCatalogService:
                     }
                 )
 
+        if app_settings.FIXED_ROW_SLOTS:
+            slots = {t: THEME_SLOTS for t, on in (("movie", enabled_movie), ("series", enabled_series)) if on}
+            catalogs = fill_slots(catalogs, "watchly.theme.", slots, "Genre & keyword picks", extra)
         return catalogs
 
     async def _build_theme_rows_for_type(

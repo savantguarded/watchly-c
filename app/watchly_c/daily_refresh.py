@@ -7,10 +7,12 @@ from loguru import logger
 from app.core.config import settings
 from app.core.constants import DAILY_REFRESH_RUN_KEY
 from app.core.security import redact_token
+from app.core.settings import UserSettings
 from app.services.auth import auth_service
 from app.services.catalog_updater import catalog_updater
-from app.services.context import extract_settings
+from app.services.context import extract_settings, load_user_context
 from app.services.manifest import manifest_service
+from app.services.recommendation.catalog_service import catalog_service
 from app.services.redis_service import redis_service
 from app.services.stremio.service import StremioBundle
 from app.services.token_store import token_store
@@ -89,4 +91,23 @@ async def refresh_account(token: str, credentials: dict) -> bool:
         finally:
             await bundle.close()
 
-    return await catalog_updater.refresh_catalogs_for_credentials(token, credentials)
+    refreshed = await catalog_updater.refresh_catalogs_for_credentials(token, credentials)
+    if refreshed and settings.DAILY_REWATCH:
+        await rebuild_rewatch(token, user_settings)
+    return refreshed
+
+
+async def rebuild_rewatch(token: str, user_settings: UserSettings) -> None:
+    """The stock row keeps its cached set until it is a day old, then rebuilds behind
+    the first request after that, so a day's set reached the screen a visit late. Built
+    here, awaited, it is in the cache before anyone opens Nuvio."""
+    config = next((c for c in user_settings.catalogs if c.id == "watchly.rewatch" and c.enabled), None)
+    if config is None:
+        return
+    ctx = await load_user_context(token)
+    try:
+        for content_type, on in (("movie", config.enabled_movie), ("series", config.enabled_series)):
+            if on:
+                await catalog_service._build_catalog(ctx, content_type, "watchly.rewatch", catalog_service._headers())
+    finally:
+        await ctx.close()

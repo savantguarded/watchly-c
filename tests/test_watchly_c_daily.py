@@ -116,6 +116,62 @@ def test_accounts_past_the_time_budget_are_left_for_later(setup, monkeypatch):
     assert asyncio.run(daily_refresh.refresh_all_accounts()) == {"refreshed": 0, "failed": 0, "deferred": 2}
 
 
+def rewatch_settings(**changes):
+    user_settings = get_default_settings()
+    config = next(c for c in user_settings.catalogs if c.id == "watchly.rewatch")
+    for field, value in {"enabled": True, **changes}.items():
+        setattr(config, field, value)
+    return user_settings
+
+
+@pytest.fixture
+def rebuilds(monkeypatch):
+    built: list[tuple[str, str]] = []
+
+    class Ctx:
+        async def close(self):
+            built.append(("closed", ""))
+
+    async def load(token):
+        return Ctx()
+
+    async def build(ctx, content_type, catalog_id, headers):
+        built.append((content_type, catalog_id))
+
+    monkeypatch.setattr(daily_refresh, "load_user_context", load)
+    monkeypatch.setattr(daily_refresh.catalog_service, "_build_catalog", build)
+    return built
+
+
+def test_the_rewatch_row_is_rebuilt_for_each_enabled_type(rebuilds):
+    asyncio.run(daily_refresh.rebuild_rewatch("tok", rewatch_settings(enabled_series=False)))
+
+    assert rebuilds == [("movie", "watchly.rewatch"), ("closed", "")]
+
+
+def test_a_disabled_rewatch_row_is_left_alone(rebuilds):
+    asyncio.run(daily_refresh.rebuild_rewatch("tok", get_default_settings()))
+
+    assert rebuilds == []
+
+
+def test_the_refresh_rebuilds_rewatch_after_the_manifest(setup, rebuilds, monkeypatch):
+    monkeypatch.setattr(daily_refresh, "extract_settings", lambda credentials: rewatch_settings())
+
+    asyncio.run(daily_refresh.refresh_account("stremio-acct", {}))
+
+    assert rebuilds == [("movie", "watchly.rewatch"), ("series", "watchly.rewatch"), ("closed", "")]
+
+
+def test_the_refresh_leaves_rewatch_alone_when_the_switch_is_off(setup, rebuilds, monkeypatch):
+    monkeypatch.setattr(daily_refresh.settings, "DAILY_REWATCH", False)
+    monkeypatch.setattr(daily_refresh, "extract_settings", lambda credentials: rewatch_settings())
+
+    asyncio.run(daily_refresh.refresh_account("stremio-acct", {}))
+
+    assert rebuilds == []
+
+
 def shuffled_settings(catalog_id: str):
     user_settings = get_default_settings()
     next(c for c in user_settings.catalogs if c.id == catalog_id).shuffle = True

@@ -5,6 +5,7 @@ from typing import Any
 
 from loguru import logger
 
+from app.core.config import settings as app_config
 from app.core.constants import DEFAULT_CATALOG_LIMIT
 from app.core.settings import UserSettings
 from app.models.library import LibraryCollection
@@ -20,8 +21,9 @@ from app.services.tmdb.service import TMDBService
 
 COOLDOWN = timedelta(days=180)
 # Drawn from the highest-signal items so the detail fetches mostly hit what the
-# profile build already cached.
-POOL_SIZE = 50
+# profile build already cached. Daily rewatch (Watchly C) widens both the pool and the
+# share of it a row is picked from, so one day's set overlaps the next less.
+POOL_SIZE, PICK_FROM = (100, 4) if app_config.DAILY_REWATCH else (50, 2)
 REACTION_BOOST = {"loved": 1.2, "liked": 1.1, "watched": 1.0}
 
 
@@ -91,7 +93,7 @@ class RewatchService:
             scored.append((score * REACTION_BOOST[sampled_item.source_type], item))
 
         scored.sort(key=lambda x: x[0], reverse=True)
-        top = scored[: limit * 2]
+        top = scored[: limit * PICK_FROM]
         picked = sorted(random.sample(top, k=min(limit, len(top))), key=lambda x: x[0], reverse=True)
 
         return await RecommendationMetadata.fetch_batch(

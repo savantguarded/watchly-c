@@ -94,3 +94,13 @@ def test_loved_outranks_a_slightly_better_watched_title():
     tmdb.details[1]["vote_average"] = 7.5
 
     assert picks(library, tmdb, profile=profile) == ["tt2", "tt1"]
+
+
+def test_a_wider_pool_lets_the_row_reach_past_the_best_forty():
+    titles = {f"tt{n}": (n, [DRAMA]) for n in range(1, 91)}
+    library = LibraryCollection(watched=[item(imdb, days_ago=400) for imdb in titles])
+    seen: set[str] = set()
+    for _ in range(30):
+        seen.update(picks(library, FakeTMDB(titles)))
+
+    assert len(seen) > 40

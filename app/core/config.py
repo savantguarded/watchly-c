@@ -62,6 +62,7 @@ class Settings(BaseSettings):
     MIXED_ITEM_ROWS: bool = True
     WATCHED_TMDB_IDS: bool = True
     FIXED_ROW_SLOTS: bool = True
+    FILL_MISSING_TITLES: bool = True
     # Rows with Shuffle on keep one order for this many hours, then reshuffle. 0 is
     # stock Watchly: a new order on every request.
     SHUFFLE_INTERVAL_HOURS: int = 1

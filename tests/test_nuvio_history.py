@@ -66,6 +66,14 @@ class FakeTMDB:
     async def get_imdb_id(self, media_type: str, tmdb_id: int):
         return {("series", 1396): "tt0903747", ("movie", 550): "tt0137523"}.get((media_type, tmdb_id))
 
+    async def find_by_imdb_id(self, imdb_id: str):
+        return {"tt0137523": (550, "movie")}.get(imdb_id, (None, None))
+
+    async def get_movie_details(self, tmdb_id: int):
+        if tmdb_id != 550:
+            raise LookupError(tmdb_id)
+        return {"title": "Fight Club"}
+
 
 def nuvio_with(client: FakeNuvioClient) -> NuvioService:
     service = NuvioService()
@@ -87,6 +95,25 @@ def test_history_merges_watched_and_finished_progress_and_resolves_tmdb_ids():
     finished = by_id["tt0137523"]
     assert finished.type == "movie" and finished.completion >= 0.9
     assert all(item.rating is None for item in history.items)
+
+
+def test_a_title_known_only_from_progress_gets_its_name_from_tmdb():
+    history = asyncio.run(nuvio_with(FakeNuvioClient()).get_history(GOOD_TOKEN, 2, FakeTMDB()))
+
+    by_id = {item.imdb_id: item for item in history.items}
+    assert by_id["tt0137523"].name == "Fight Club"
+    assert by_id["tt0113277"].name == "tt0113277"
+
+
+def test_a_failed_title_lookup_leaves_the_name_empty_and_keeps_the_history():
+    class DownTMDB(FakeTMDB):
+        async def get_movie_details(self, tmdb_id: int):
+            raise LookupError(tmdb_id)
+
+    history = asyncio.run(nuvio_with(FakeNuvioClient()).get_history(GOOD_TOKEN, 2, DownTMDB()))
+
+    assert {item.imdb_id: item.name for item in history.items}["tt0137523"] == ""
+    assert len(history.items) == 3
 
 
 def test_a_rejected_session_raises_instead_of_an_empty_history():

@@ -5,8 +5,10 @@ from typing import TYPE_CHECKING, Any
 from loguru import logger
 
 from app.core.base_client import BaseClient
+from app.core.config import settings
 from app.core.constants import DEFAULT_CONCURRENCY_LIMIT
 from app.models.history import WatchHistory, WatchHistoryItem
+from app.watchly_c.names import fill_missing_titles
 
 if TYPE_CHECKING:
     from app.services.tmdb.service import TMDBService
@@ -124,6 +126,8 @@ class NuvioService:
                 self._merge(items, row, completion, row.get("last_watched"))
 
         resolved = await self._resolve_imdb_ids(items, tmdb_service)
+        if settings.FILL_MISSING_TITLES:
+            await fill_missing_titles(resolved, tmdb_service)
         logger.info(f"Nuvio history: {len(resolved)} of {len(items)} titles resolved to IMDb ids")
         return WatchHistory(items=resolved, source="nuvio")
 

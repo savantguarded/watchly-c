@@ -2,6 +2,8 @@ from typing import Any
 
 # RowGeneratorService plans up to three theme rows per type, by template or LLM.
 THEME_SLOTS = 3
+# Seasonal and contextual rows: one for the season, one for the moment, one rotating.
+CONTEXT_SLOTS = 3
 
 
 def fill_slots(

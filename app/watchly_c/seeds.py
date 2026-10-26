@@ -27,7 +27,7 @@ def today() -> date:
     return (datetime.now(timezone.utc) + timedelta(hours=settings.DAILY_UTC_OFFSET_HOURS)).date()
 
 
-def _rating(item: StremioLibraryItem) -> float | None:
+def rating_of(item: StremioLibraryItem) -> float | None:
     if item.rating is not None:
         return item.rating
     if item.is_loved:
@@ -43,7 +43,7 @@ def _weight(item: StremioLibraryItem, last_active: datetime, now: datetime, wind
     age_days = max((now - last_active).days, 0)
     recency = max(1 - age_days / window, 0) if window else 1 / (1 + age_days / 365)
 
-    rating = _rating(item)
+    rating = rating_of(item)
     if rating is not None:
         strength = (rating - 6) / 4
     else:
@@ -69,8 +69,8 @@ def pick_seeds(
     in the last few days are skipped while there are enough others.
     """
     picked: list[StremioLibraryItem] = []
-    rated = [i for i in items if (_rating(i) or 0) >= SEED_RATING_FLOOR]
-    unrated = [i for i in items if (_rating(i) or 0) < SEED_RATING_FLOOR]
+    rated = [i for i in items if (rating_of(i) or 0) >= SEED_RATING_FLOOR]
+    unrated = [i for i in items if (rating_of(i) or 0) < SEED_RATING_FLOOR]
 
     for group in (rated, unrated):
         need = k - len(picked)

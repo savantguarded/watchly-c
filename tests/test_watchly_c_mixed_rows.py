@@ -122,7 +122,9 @@ class FakeItemService:
         self.same = same
         self.calls = []
 
-    async def get_recommendations_for_item(self, item_id, content_type, watched_tmdb, watched_imdb, limit):
+    async def get_recommendations_for_item(
+        self, item_id, content_type, watched_tmdb, watched_imdb, limit, seed_rating=None
+    ):
         self.calls.append((item_id, content_type))
         return self.same
 
@@ -229,7 +231,9 @@ def test_watched_titles_of_the_other_type_are_dropped_before_the_cut(patched, mo
 
 
 def test_a_short_seed_pool_still_declares_every_slot_and_maps_only_the_filled_ones():
-    short = LibraryCollection(loved=[lib_item("tt1", "movie", True)], watched=[lib_item("tt3", "movie")], source="nuvio")
+    short = LibraryCollection(
+        loved=[lib_item("tt1", "movie", True)], watched=[lib_item("tt3", "movie")], source="nuvio"
+    )
     rows, slots = slotted_rows(CatalogConfig(id="watchly.item", rows=4), short)
 
     assert [r["id"] for r in rows] == [f"{MIXED_ITEM_PREFIX}{n}" for n in range(1, 5)]

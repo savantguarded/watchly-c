@@ -64,12 +64,19 @@ class Settings(BaseSettings):
     FIXED_ROW_SLOTS: bool = True
     FILL_MISSING_TITLES: bool = True
     DAILY_REWATCH: bool = True
+    RELEVANCE_RANKING: bool = True
+    WIDE_THEME_ROWS: bool = True
+    CONTEXT_ROWS: bool = True
+    CROSS_ROW_DEDUPE: bool = True
     # Rows with Shuffle on keep one order for this many hours, then reshuffle. 0 is
     # stock Watchly: a new order on every request.
     SHUFFLE_INTERVAL_HOURS: int = 1
     # Hours from UTC where "a day" starts for daily seeds and shuffles. An offset rather
     # than a zone name: zone data isn't guaranteed on every host, and Lagos has no DST.
     DAILY_UTC_OFFSET_HOURS: float = 1.0
+    # Where "is it raining today" is looked up for the Rainy Day row. Lagos.
+    WEATHER_LATITUDE: float = 6.5244
+    WEATHER_LONGITUDE: float = 3.3792
     # Vercel sends this as a Bearer token on cron calls once it is set in the project.
     CRON_SECRET: str | None = None
     # Run the setup warm-up inside the configure page's status poll rather than behind

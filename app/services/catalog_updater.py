@@ -12,6 +12,7 @@ from app.services.auth import auth_service
 from app.services.context import extract_settings
 from app.services.stremio.service import StremioBundle
 from app.services.token_store import token_store
+from app.watchly_c.dedupe import build_order
 
 
 class CatalogUpdater:
@@ -147,7 +148,8 @@ class CatalogUpdater:
                 # because the catalog service imports this module to trigger refreshes.
                 from app.services.recommendation.catalog_service import catalog_service
 
-                for catalog in catalogs:
+                # The rows that claim a title first are built first, so one pass settles who shows what.
+                for catalog in build_order(catalogs) if settings.CROSS_ROW_DEDUPE else catalogs:
                     # Stremio's home board skips a row with a required extra; that one is
                     # built when the user opens it in Discover.
                     if any(extra.get("isRequired") for extra in catalog.get("extra", [])):

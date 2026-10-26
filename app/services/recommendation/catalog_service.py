@@ -27,7 +27,11 @@ from app.services.tmdb.service import get_tmdb_service
 from app.services.token_store import token_store
 from app.services.user_cache import user_cache
 from app.services.warmup import warmup_service
+from app.watchly_c.context_rows import ContextRowService
+from app.watchly_c.dedupe import claimed_by_earlier_rows, record_claims
 from app.watchly_c.mixed_rows import MIXED_ITEM_PREFIX, mixed_recommendations
+from app.watchly_c.relevance import RankedItemService
+from app.watchly_c.theme_rows import WideThemeService
 
 REFRESH_LOCK_PREFIX = "watchly:refreshlock:"
 # Long enough to cover a slow rebuild, short enough that a worker killed mid-refresh
@@ -175,6 +179,8 @@ class CatalogService:
             # asked for, which is the whole point: it survives a definition change.
             resolved_id = await self._resolve_slot(ctx.token, content_type, catalog_id)
             if resolved_id is None:
+                if settings.CROSS_ROW_DEDUPE:
+                    await record_claims(ctx.token, content_type, catalog_id, [])
                 return {"metas": []}, headers
 
             services = self._initialize_services(ctx.user_settings)
@@ -209,6 +215,7 @@ class CatalogService:
                     user_settings=ctx.user_settings,
                 )
 
+            claimed = await claimed_by_earlier_rows(ctx.token, catalog_id) if settings.CROSS_ROW_DEDUPE else {}
             recommendations = await self._get_recommendations(
                 catalog_id=resolved_id,
                 content_type=content_type,
@@ -219,11 +226,15 @@ class CatalogService:
                 library_items=ctx.library,
                 limit=DEFAULT_CATALOG_LIMIT,
                 user_settings=ctx.user_settings,
+                claimed=claimed,
             )
 
             logger.debug(f"Returning {len(recommendations)} items for {content_type}")
 
             cleaned = [m for m in (clean_meta(m) for m in recommendations) if m is not None]
+            if settings.CROSS_ROW_DEDUPE:
+                shown = [m for m in recommendations if clean_meta(m) is not None]
+                await record_claims(ctx.token, content_type, catalog_id, shown)
             if cleaned:
                 # Cached unshuffled: a cache hit shuffles what it reads, so a shuffled
                 # copy here would serve a different order on the first request than on
@@ -264,6 +275,7 @@ class CatalogService:
         supported_prefixes = (
             "watchly.theme.",
             "watchly.item.",
+            "watchly.ctx.",
             "watchly.loved.",
             "watchly.watched.",
         )
@@ -273,7 +285,7 @@ class CatalogService:
                 status_code=400,
                 detail=(
                     "Invalid id. Supported: 'watchly.rec', 'watchly.creators', "
-                    "'watchly.theme.<params>', 'watchly.item.<imdb>', "
+                    "'watchly.theme.<params>', 'watchly.item.<imdb>', 'watchly.ctx.<row>', "
                     "'watchly.all.loved', 'watchly.liked.all', 'watchly.rewatch'"
                 ),
             )
@@ -285,8 +297,11 @@ class CatalogService:
         return {
             "tmdb": tmdb_service,
             "profile": ProfileService(language=language, tmdb_api_key=tmdb_key),
-            "item": ItemBasedService(tmdb_service, user_settings),
-            "theme": ThemeBasedService(tmdb_service, user_settings),
+            "item": (RankedItemService if settings.RELEVANCE_RANKING else ItemBasedService)(
+                tmdb_service, user_settings
+            ),
+            "theme": (WideThemeService if settings.WIDE_THEME_ROWS else ThemeBasedService)(tmdb_service, user_settings),
+            "ctx": ContextRowService(tmdb_service, user_settings),
             "top_picks": TopPicksService(tmdb_service, user_settings),
             "creators": CreatorsService(tmdb_service, user_settings),
             "all_based": AllBasedService(tmdb_service, user_settings),
@@ -342,7 +357,7 @@ class CatalogService:
                 return None
             return f"watchly.item.mix.{definition}"
 
-        match = re.match(r"^watchly\.(theme|item)\.(\d+)$", catalog_id)
+        match = re.match(r"^watchly\.(theme|item|ctx)\.(\d+)$", catalog_id)
         if not match:
             return catalog_id
 
@@ -365,12 +380,18 @@ class CatalogService:
         library_items: LibraryCollection,
         limit: int,
         user_settings: UserSettings | None = None,
+        claimed: dict[str, set[int]] | None = None,
     ) -> list[dict[str, Any]]:
         """Route to appropriate recommendation service based on catalog ID."""
+        claimed = claimed or {}
         if catalog_id.startswith(MIXED_ITEM_PREFIX):
             return await mixed_recommendations(
-                services["item"], catalog_id, content_type, watched_tmdb, watched_imdb, library_items, limit
+                services["item"], catalog_id, content_type, watched_tmdb, watched_imdb, library_items, limit, claimed
             )
+
+        # Titles another row is showing are left out the same way watched ones are: before
+        # enrichment, so a row doesn't pay for a title it then has to drop.
+        watched_tmdb = watched_tmdb | claimed.get(content_type, set())
 
         if any(catalog_id.startswith(p) for p in ("watchly.item.", "watchly.loved.", "watchly.watched.")):
             item_id = re.sub(r"^watchly\.(item|loved|watched)\.", "", catalog_id)
@@ -384,6 +405,13 @@ class CatalogService:
                 limit=limit,
             )
             logger.debug(f"Found {len(recommendations)} recommendations for item {item_id}")
+
+        elif catalog_id.startswith("watchly.ctx."):
+            context_service: ContextRowService = services["ctx"]
+            recommendations = await context_service.get_recommendations(
+                catalog_id, content_type, profile, watched_tmdb, watched_imdb, limit
+            )
+            logger.debug(f"Found {len(recommendations)} recommendations for {catalog_id}")
 
         elif catalog_id.startswith("watchly.theme."):
             theme_service: ThemeBasedService = services["theme"]

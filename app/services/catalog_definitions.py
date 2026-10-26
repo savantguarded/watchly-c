@@ -13,6 +13,7 @@ from app.services.profile.service import ProfileService
 from app.services.row_generator import RowGeneratorService
 from app.services.tmdb.service import get_tmdb_service
 from app.services.user_cache import user_cache
+from app.watchly_c.context_rows import CONTEXT_CONFIG_ID, context_catalogs
 from app.watchly_c.mixed_rows import mixed_item_rows
 from app.watchly_c.row_slots import THEME_SLOTS, fill_slots
 from app.watchly_c.seeds import choose_seeds
@@ -49,6 +50,8 @@ def get_config_id(catalog: dict[str, Any]) -> str | None:
         return "watchly.theme"
     if catalog_id.startswith("watchly.item."):
         return "watchly.item"
+    if catalog_id.startswith("watchly.ctx."):
+        return CONTEXT_CONFIG_ID
     # Legacy stored manifests still emit watchly.loved.* / watchly.watched.* —
     # map them to the unified watchly.item config so user ordering keeps working.
     if catalog_id.startswith("watchly.loved.") or catalog_id.startswith("watchly.watched."):
@@ -191,6 +194,19 @@ class DynamicCatalogService:
         else:
             for mtype in ["movie", "series"]:
                 await self._add_item_based_rows(catalogs, library_items, mtype, item_cfg, row_slots, token)
+
+        if app_settings.CONTEXT_ROWS:
+            context_config = next((c for c in user_settings.catalogs if c.id == CONTEXT_CONFIG_ID), None)
+            catalogs.extend(
+                await context_catalogs(
+                    token,
+                    context_config,
+                    library_items,
+                    self._parse_item_last_watched,
+                    user_settings.year_min,
+                    row_slots,
+                )
+            )
 
         catalogs.extend(get_catalogs_from_config(user_settings, "watchly.rec", "Top Picks for You", True, True))
         catalogs.extend(

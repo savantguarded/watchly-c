@@ -46,9 +46,10 @@ function createCatalogItem(cat, index) {
     item.dataset.enabled = String(cat.enabled);
 
     // watchly.theme builds names from genres/keywords at runtime; watchly.item
-    // builds them from the seed bucket ("Because you loved/watched"). Both
-    // would discard a user-supplied name, so the rename button is hidden.
-    const isRenamable = cat.id !== 'watchly.theme' && cat.id !== 'watchly.item';
+    // builds them from the seed bucket ("Because you loved/watched"); watchly.ctx
+    // names each row for the day. All would discard a user-supplied name, so the
+    // rename button is hidden.
+    const isRenamable = !['watchly.theme', 'watchly.item', 'watchly.ctx'].includes(cat.id);
     // Only the item catalog can emit several rows; each gets its own seed.
     const hasRowCount = cat.id === 'watchly.item';
 

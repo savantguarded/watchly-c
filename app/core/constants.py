@@ -35,6 +35,12 @@ MANIFEST_KEY: str = "watchly:manifest:{version}:{token}"
 SEED_LOG_KEY: str = "watchly:c:seeds:{token}"
 # Watchly C: one daily refresh run per day, however often the cron fires.
 DAILY_REFRESH_RUN_KEY: str = "watchly:c:daily_refresh:{day}"
+# Watchly C: the titles one row is showing, so rows built after it can leave them out.
+CLAIMS_KEY: str = "watchly:c:claims:{token}:{content_type}:{catalog_id}"
+# Watchly C: which seasonal/contextual rows a token was given today, and when each last ran.
+CONTEXT_LOG_KEY: str = "watchly:c:context:{token}"
+# Watchly C: whether it rains today, shared by every account.
+WEATHER_KEY: str = "watchly:c:rain:{day}"
 # Watchly C: IMDb id -> "movie:<tmdb id>" / "tv:<tmdb id>", shared by every account.
 IMDB_TO_TMDB_KEY: str = "watchly:c:imdb_tmdb"
 

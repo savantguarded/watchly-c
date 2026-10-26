@@ -22,8 +22,9 @@ from app.services.recommendation.metadata import RecommendationMetadata
 from app.services.recommendation.utils import resolve_tmdb_id
 from app.services.tmdb.genre import movie_genres, series_genres
 from app.services.tmdb.service import TMDBService
+from app.watchly_c.relevance import clears_floor, has_off_topic, quality, rating_floor
 from app.watchly_c.row_slots import fill_slots
-from app.watchly_c.seeds import choose_seeds
+from app.watchly_c.seeds import choose_seeds, rating_of
 from app.watchly_c.watched_tmdb import watched_tmdb_ids
 
 # Mixed rows are served as stable slots (`watchly.item.mix.1`..`.4`), all declared under
@@ -116,23 +117,42 @@ async def mixed_recommendations(
     watched_imdb: set[str],
     library: LibraryCollection,
     limit: int,
+    claimed: dict[str, set[int]] | None = None,
 ) -> list[dict[str, Any]]:
-    """The seed's own-type picks from the stock item engine, with every third card
-    swapped for a title of the other type that shares the seed's keywords or genres."""
+    """The seed's own-type picks from the item engine, with every third card swapped
+    for a title of the other type that shares the seed's keywords or genres. `claimed`
+    holds the titles other rows are already showing, per type."""
     seed_type, seed_id = parse_mixed_id(catalog_id, seed_type)
+    claimed = claimed or {}
     user_settings: UserSettings = item_service.user_settings
     other = OTHER_TYPE[seed_type]
     config = _item_config(user_settings)
     cross_wanted = bool(config and (config.enabled_series if other == "series" else config.enabled_movie))
 
-    same_task = item_service.get_recommendations_for_item(seed_id, seed_type, watched_tmdb, watched_imdb, limit)
+    seed = next((i for i in library.all_items() if i.id == seed_id), None)
+    seed_rating = rating_of(seed) if seed else None
+    # The ranked engine is the only one that takes the seed's rating.
+    extra = {"seed_rating": seed_rating} if settings.RELEVANCE_RANKING else {}
+    same_task = item_service.get_recommendations_for_item(
+        seed_id, seed_type, watched_tmdb | claimed.get(seed_type, set()), watched_imdb, limit, **extra
+    )
     if not cross_wanted:
         return (await same_task)[:limit]
 
     cross_count = limit // CROSS_EVERY + 1
     same, cross = await asyncio.gather(
         same_task,
-        _cross_type(item_service.tmdb_service, user_settings, seed_id, seed_type, library, watched_imdb, cross_count),
+        _cross_type(
+            item_service.tmdb_service,
+            user_settings,
+            seed_id,
+            seed_type,
+            library,
+            watched_imdb,
+            cross_count,
+            claimed.get(other, set()),
+            seed_rating,
+        ),
         return_exceptions=True,
     )
     if isinstance(same, BaseException):
@@ -168,6 +188,8 @@ async def _cross_type(
     library: LibraryCollection,
     watched_imdb: set[str],
     count: int,
+    claimed: set[int],
+    seed_rating: float | None,
 ) -> list[dict[str, Any]]:
     """Titles of the other type found through TMDB discover on the seed's keywords
     and its genres, mapped across. Those matching on both lead."""
@@ -216,7 +238,11 @@ async def _cross_type(
 
     ranked = sorted(found.values(), key=lambda i: -hits[i["id"]])
     watched_other = await watched_tmdb_ids(library, other, user_settings) if settings.WATCHED_TMDB_IDS else set()
-    ranked = filter_by_genres(filter_items_by_settings(ranked, user_settings), watched_other, excluded)
+    ranked = filter_by_genres(filter_items_by_settings(ranked, user_settings), watched_other | claimed, excluded)
+    if settings.RELEVANCE_RANKING:
+        floor = rating_floor(seed_rating)
+        ranked = [i for i in ranked if clears_floor(i, floor) and not has_off_topic(i.get("genre_ids") or (), genres)]
+        ranked.sort(key=lambda i: (-hits[i["id"]], -quality(i, other)))
     # Over-fetch for what the watched filter takes out; truncate before the costly enrichment.
     enriched = await RecommendationMetadata.fetch_batch(tmdb_service, ranked[: count * 2], other, user_settings)
     return filter_watched_by_imdb(enriched, library.all_imdb_ids() | watched_imdb)[:count]

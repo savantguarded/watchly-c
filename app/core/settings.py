@@ -186,6 +186,16 @@ if app_config.MIXED_ITEM_ROWS:
     )
 
 
+if app_config.CONTEXT_ROWS:
+    CATALOG_DESCRIPTIONS["watchly.ctx"] = (
+        "Seasonal and contextual rows, three per type, new each day and each given its turn. One follows the"
+        " time of year (Spooky Season, Holiday Season, Valentine's, Awards Season, Summer Blockbusters, African"
+        " Stories), one the moment (Friday Night, Sunday Slow, Rainy Day, On This Day), and one rotates through"
+        " Late Night Watch, Hidden Gems, a Decade Time Machine, Short Binges and a row from the people behind"
+        " something you loved. A slot with nothing that fits the day takes the next one in the rotation."
+    )
+
+
 def get_default_settings() -> UserSettings:
     return UserSettings(
         language="en-US",
@@ -217,6 +227,21 @@ def get_default_settings() -> UserSettings:
                 enabled_series=True,
                 display_at_home=True,
                 shuffle=False,
+            ),
+            *(
+                [
+                    CatalogConfig(
+                        id="watchly.ctx",
+                        name="Seasonal & Contextual",
+                        enabled=True,
+                        enabled_movie=True,
+                        enabled_series=True,
+                        display_at_home=True,
+                        shuffle=False,
+                    )
+                ]
+                if app_config.CONTEXT_ROWS
+                else []
             ),
             CatalogConfig(
                 id="watchly.creators",

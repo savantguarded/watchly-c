@@ -96,6 +96,29 @@ def pick_seeds(
     return picked
 
 
+async def _read_log(token: str) -> dict[str, dict[str, list[str]]]:
+    raw = await redis_service.get(SEED_LOG_KEY.format(token=token))
+    return json.loads(raw) if raw else {}
+
+
+async def reroll_seeds(token: str) -> None:
+    """Drop today's picks so the next build draws new ones.
+
+    Today's picks move into yesterday's entry: the draw is seeded by token and day, so
+    only a changed avoid-set makes it land elsewhere, and filing them there also keeps
+    them out of the next few days like any used seed.
+    """
+    log = await _read_log(token)
+    day = today()
+    todays = log.pop(day.isoformat(), None)
+    if not todays:
+        return
+    yesterday = log.setdefault((day - timedelta(days=1)).isoformat(), {})
+    for scope, ids in todays.items():
+        yesterday[scope] = list(dict.fromkeys(yesterday.get(scope, []) + ids))
+    await redis_service.set(SEED_LOG_KEY.format(token=token), json.dumps(log), SEED_LOG_TTL_SECONDS)
+
+
 async def choose_seeds(
     token: str | None,
     items: list[StremioLibraryItem],
@@ -114,10 +137,7 @@ async def choose_seeds(
     rng = random.Random(f"{token}:{day.isoformat()}:{scope}")
     now = datetime.now(timezone.utc)
 
-    log: dict[str, dict[str, list[str]]] = {}
-    if token:
-        raw = await redis_service.get(SEED_LOG_KEY.format(token=token))
-        log = json.loads(raw) if raw else {}
+    log = await _read_log(token) if token else {}
 
     kept = [by_id[i] for i in log.get(day.isoformat(), {}).get(scope, []) if i in by_id]
     if len(kept) >= k:

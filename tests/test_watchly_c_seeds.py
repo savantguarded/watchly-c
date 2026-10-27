@@ -9,7 +9,7 @@ import pytest
 from app.core.constants import SEED_LOG_KEY
 from app.models.library import StremioLibraryItem, StremioState
 from app.watchly_c import seeds as seeds_module
-from app.watchly_c.seeds import choose_seeds, pick_seeds
+from app.watchly_c.seeds import choose_seeds, pick_seeds, reroll_seeds
 
 NOW = datetime(2026, 10, 21, 12, tzinfo=timezone.utc)
 TOKEN = "tok_seeds"
@@ -194,3 +194,33 @@ def test_a_title_gone_from_the_library_is_replaced(fake_redis, on_day):
 
     again = choose(library=smaller)
     assert first[1:] == again[:2] and len(again) == 3 and first[0] not in again
+
+
+def test_a_reroll_draws_new_seeds_and_keeps_them_stable_afterwards(fake_redis, on_day):
+    on_day("2026-10-21")
+    first = choose()
+
+    asyncio.run(reroll_seeds(TOKEN))
+    second = choose()
+
+    assert not set(first) & set(second)
+    assert choose() == second
+
+
+def test_a_reroll_keeps_the_superseded_picks_out_of_the_coming_days(fake_redis, on_day):
+    on_day("2026-10-21")
+    first = choose()
+    asyncio.run(reroll_seeds(TOKEN))
+
+    logged = json.loads(fake_redis.data[SEED_LOG_KEY.format(token=TOKEN)])
+
+    assert "2026-10-21" not in logged
+    assert logged["2026-10-20"]["movie"] == first
+
+
+def test_rerolling_a_day_with_no_picks_changes_nothing(fake_redis, on_day):
+    on_day("2026-10-21")
+
+    asyncio.run(reroll_seeds(TOKEN))
+
+    assert SEED_LOG_KEY.format(token=TOKEN) not in fake_redis.data

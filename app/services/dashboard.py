@@ -10,6 +10,7 @@ from app.services.tmdb.genre import movie_genres, series_genres
 from app.services.tmdb.service import get_tmdb_service
 from app.services.token_store import token_store
 from app.services.user_cache import user_cache
+from app.watchly_c.seeds import reroll_seeds
 
 
 class DashboardService:
@@ -115,6 +116,8 @@ class DashboardService:
         if not credentials:
             return False
 
+        if settings.REROLL_SEEDS_ON_REFRESH:
+            await reroll_seeds(token)
         await user_cache.invalidate_all_user_data(token)
         await catalog_updater.trigger_update(token, credentials)
         return True

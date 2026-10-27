@@ -64,6 +64,7 @@ class Settings(BaseSettings):
     FIXED_ROW_SLOTS: bool = True
     FILL_MISSING_TITLES: bool = True
     DAILY_REWATCH: bool = True
+    REROLL_SEEDS_ON_REFRESH: bool = True
     RELEVANCE_RANKING: bool = True
     WIDE_THEME_ROWS: bool = True
     CONTEXT_ROWS: bool = True

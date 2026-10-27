@@ -106,7 +106,7 @@ def get_current_year() -> int:
     return datetime.now().year
 
 
-DEFAULT_YEAR_MIN = 1970
+DEFAULT_YEAR_MIN = 1950
 
 
 def get_default_year_max() -> int:

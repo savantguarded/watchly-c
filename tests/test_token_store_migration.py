@@ -40,5 +40,5 @@ def test_token_request_defaults_match_user_settings_defaults():
     token_request = TokenRequest()
     user_settings = UserSettings(catalogs=[])
 
-    assert token_request.year_min == user_settings.year_min == 1970
+    assert token_request.year_min == user_settings.year_min == 1950
     assert token_request.year_max is None and user_settings.year_max is None

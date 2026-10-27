@@ -120,3 +120,33 @@ def test_rows_for_the_second_type_avoid_what_the_first_used():
 
     anchors = {int(v) for axes, _ in rows for role, kind, v in axes if role == "a" and kind == "g"}
     assert not anchors & {28, 53, 18}
+
+
+def test_a_gemini_key_writes_titles_from_the_filters_and_never_the_rows(monkeypatch):
+    from app.core.settings import LLMConfig
+
+    prompts = []
+
+    async def title(prompt, config):
+        prompts.append(prompt)
+        return "Written by the model"
+
+    async def no_rows(*args, **kwargs):
+        raise AssertionError("the model must not design the rows")
+
+    monkeypatch.setattr("app.services.row_generator.llm_service.generate_title", title)
+    monkeypatch.setattr("app.services.row_generator.llm_service.generate_structured", no_rows)
+    service = RowGeneratorService.__new__(RowGeneratorService)
+
+    async def resolve(self, ids):
+        return {k: ("revenge" if k == 1 else KEYWORDS[k]) for k in ids}
+
+    monkeypatch.setattr(RowGeneratorService, "_resolve_keyword_names", resolve)
+    random.seed(3)
+    rows = asyncio.run(
+        service.generate_rows(PROFILE, "movie", llm_config=LLMConfig(provider="gemini", api_key="k"), count=4)
+    )
+
+    assert len(rows) == 4 and {r.title for r in rows} == {"Written by the model"}
+    assert all(p.startswith("Genre: ") or p.startswith("Keyword: ") for p in prompts)
+    assert all("Working title: " in p for p in prompts)

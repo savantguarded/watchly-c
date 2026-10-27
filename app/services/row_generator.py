@@ -14,6 +14,7 @@ from typing import Any
 from loguru import logger
 from pydantic import BaseModel, Field
 
+from app.core.config import settings
 from app.core.settings import LLMConfig
 from app.models.profile import TasteProfile
 from app.services.llm import llm_service
@@ -243,6 +244,23 @@ def build_fallback_rows(
     return rows[:count]
 
 
+def describe_axes(
+    axes: list[tuple[str, str, Any]], keyword_names: dict[int, str], content_type: str, title: str
+) -> str:
+    """The filters behind a row, in the form the title prompt expects, with the written
+    title as the working one to improve on or keep."""
+    genre_map = movie_genres if content_type == "movie" else series_genres
+    parts = []
+    for _, kind, value in axes:
+        if kind == "g":
+            parts.append(f"Genre: {genre_map.get(value, value)}")
+        elif kind == "k" and value in keyword_names:
+            parts.append(f"Keyword: {keyword_names[value]}")
+        elif kind == "ct":
+            parts.append(f"Country: {value}")
+    return f"{', '.join(parts)}. Working title: {title}"
+
+
 class RowGeneratorService:
     """Generates dynamic, personalized row definitions from a taste profile."""
 
@@ -274,7 +292,9 @@ class RowGeneratorService:
         keyword_names = {kid: name for kid, name in keyword_names.items() if name.lower() in KEYWORD_LINES}
         keywords = [(kid, score) for kid, score in keywords if kid in keyword_names]
 
-        if llm_config:
+        # The structured path asks for exactly three rows and knows nothing of the other type's
+        # rows, so with row counts and no-repeat rows the model only writes titles.
+        if llm_config and not settings.WIDE_THEME_ROWS:
             try:
                 llm_rows = await self._generate_with_llm(
                     profile, genres, keywords, keyword_names, content_type, llm_config
@@ -288,7 +308,12 @@ class RowGeneratorService:
         rows = build_fallback_rows(
             genres, keywords, countries, runtimes, keyword_names, content_type, count, avoid_genres, avoid_keywords
         )
-        titled = await self._generate_titles(rows, llm_config)
+        prompts = (
+            [describe_axes(axes, keyword_names, content_type, title) for axes, title in rows]
+            if settings.WIDE_THEME_ROWS
+            else None
+        )
+        titled = await self._generate_titles(rows, llm_config, prompts)
         logger.info(f"Generated {len(titled)} rows (fallback) for {content_type}")
         return titled
 
@@ -298,6 +323,7 @@ class RowGeneratorService:
         self,
         rows: list[tuple[list[tuple[str, str, Any]], str]],
         llm_config: LLMConfig | None,
+        prompts: list[str] | None = None,
     ) -> list[RowDefinition]:
         if not rows:
             return []
@@ -305,7 +331,7 @@ class RowGeneratorService:
         if not llm_config:
             return [RowDefinition(title=fallback, id=build_row_id(axes)) for axes, fallback in rows]
 
-        prompts = [fallback for _, fallback in rows]
+        prompts = prompts or [fallback for _, fallback in rows]
         results = await asyncio.gather(
             *[llm_service.generate_title(p, llm_config) for p in prompts],
             return_exceptions=True,

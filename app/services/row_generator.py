@@ -20,7 +20,7 @@ from app.services.llm import llm_service
 from app.services.tmdb.countries import COUNTRY_ADJECTIVES
 from app.services.tmdb.genre import movie_genres, series_genres
 from app.services.tmdb.service import TMDBService, get_tmdb_service
-from app.watchly_c.meta_keywords import is_meta_keyword
+from app.watchly_c.theme_titles import KEYWORD_LINES, title_for
 
 GOLD_END = 3
 SILVER_START = 3
@@ -212,13 +212,16 @@ def build_fallback_rows(
     keyword_names: dict[int, str],
     content_type: str,
     count: int = 3,
+    avoid_genres: set[int] | None = None,
+    avoid_keywords: set[int] | None = None,
 ) -> list[tuple[list[tuple[str, str, Any]], str]]:
     """Build up to `count` rows as (axes, fallback_title) tuples, three to a round.
     Each later round reaches further down the profile's genres and keywords."""
     rows: list[tuple[list[tuple[str, str, Any]], str]] = []
     seen: set[str] = set()
-    used_genres: set[int] = set()
-    used_keywords: set[int] = set()
+    titles: set[str] = set()
+    used_genres = set(avoid_genres or ())
+    used_keywords = set(avoid_keywords or ())
 
     for reach in range(0, count, 3):
         round_rows = (
@@ -229,9 +232,13 @@ def build_fallback_rows(
             ),
         )
         for row in round_rows:
-            if row and build_row_id(row[0]) not in seen:
+            if not row:
+                continue
+            title = title_for(row[0], keyword_names)
+            if build_row_id(row[0]) not in seen and title not in titles:
                 seen.add(build_row_id(row[0]))
-                rows.append(row)
+                titles.add(title)
+                rows.append((row[0], title))
 
     return rows[:count]
 
@@ -248,8 +255,11 @@ class RowGeneratorService:
         content_type: str = "movie",
         llm_config: LLMConfig | None = None,
         count: int = 3,
+        avoid_genres: set[int] | None = None,
+        avoid_keywords: set[int] | None = None,
     ) -> list[RowDefinition]:
-        """Generate up to `count` personalized catalog rows.
+        """Generate up to `count` personalized catalog rows, none anchored on the genres
+        or keywords in `avoid` (what the other type's rows already use).
 
         Without an LLM config (user supplied no key) the rows come purely from
         the template fallback — no LLM calls are made at all.
@@ -260,7 +270,9 @@ class RowGeneratorService:
         runtimes = sorted(profile.runtime_bucket_scores.items(), key=lambda x: x[1], reverse=True)
 
         keyword_names = await self._resolve_keyword_names([kid for kid, _ in keywords])
-        keywords = [(kid, score) for kid, score in keywords if not is_meta_keyword(keyword_names.get(kid))]
+        # Keywords without a title line make bad rows, so only the ones with one are used.
+        keyword_names = {kid: name for kid, name in keyword_names.items() if name.lower() in KEYWORD_LINES}
+        keywords = [(kid, score) for kid, score in keywords if kid in keyword_names]
 
         if llm_config:
             try:
@@ -273,7 +285,9 @@ class RowGeneratorService:
             except Exception as e:
                 logger.warning(f"LLM row generation failed, using fallback: {e}")
 
-        rows = build_fallback_rows(genres, keywords, countries, runtimes, keyword_names, content_type, count)
+        rows = build_fallback_rows(
+            genres, keywords, countries, runtimes, keyword_names, content_type, count, avoid_genres, avoid_keywords
+        )
         titled = await self._generate_titles(rows, llm_config)
         logger.info(f"Generated {len(titled)} rows (fallback) for {content_type}")
         return titled

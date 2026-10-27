@@ -91,3 +91,40 @@ def test_widening_keywords_skip_credit_tags(monkeypatch):
     profile = TasteProfile(keyword_scores={1: 9.0, 2: 8.0, 3: 7.0})
 
     assert asyncio.run(service._favourite_keywords(profile)) == [2, 3]
+
+
+def test_a_mixed_theme_row_alternates_its_own_type_with_the_others_matching_titles(monkeypatch):
+    from app.watchly_c.theme_rows import mixed_theme_recommendations
+
+    class BothTypes(FakeTMDB):
+        async def get_discover(self, media_type, page=1, **kwargs):
+            self.calls.append({"type": media_type, **kwargs})
+            return {"results": [candidate(page * 1000 + n) for n in range(10)]}
+
+    async def typed_batch(tmdb_service, items, media_type, user_settings=None):
+        kind = "series" if media_type in ("tv", "series") else "movie"
+        return [{"id": f"tt{kind}{i['id']}", "_tmdb_id": i["id"], "type": kind} for i in items]
+
+    async def native_row(self, theme_id, content_type, profile, watched_tmdb, watched_imdb, limit):
+        return [
+            {"id": f"ttnative{n}", "_tmdb_id": n, "type": content_type, "vote_average": 8, "vote_count": 999}
+            for n in range(limit)
+        ]
+
+    monkeypatch.setattr(ThemeBasedService, "get_recommendations_for_theme", native_row)
+    monkeypatch.setattr(theme_rows.RecommendationMetadata, "fetch_batch", typed_batch)
+    tmdb = BothTypes(depth=0)
+    service = WideThemeService(tmdb, get_default_settings())
+    states = {t: (None, set(), set()) for t in ("movie", "series")}
+
+    out = asyncio.run(
+        mixed_theme_recommendations(
+            service, "watchly.theme.series:a:g10765.f:k5", ["movie", "series"], states, {"movie": {1000}}, 20
+        )
+    )
+
+    assert len(out) == 20
+    assert [m["type"] for m in out[:4]] == ["series", "movie", "series", "movie"]
+    movie_calls = [c for c in tmdb.calls if c["type"] == "movie"]
+    assert movie_calls and all(c["with_genres"] == "878|14" for c in movie_calls)
+    assert 1000 not in {m["_tmdb_id"] for m in out if m["type"] == "movie"}

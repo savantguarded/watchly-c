@@ -164,12 +164,14 @@ async def mixed_recommendations(
     return interleave(same, cross, limit)
 
 
-def interleave(same: list[dict[str, Any]], cross: list[dict[str, Any]], limit: int) -> list[dict[str, Any]]:
+def interleave(
+    same: list[dict[str, Any]], cross: list[dict[str, Any]], limit: int, every: int = CROSS_EVERY
+) -> list[dict[str, Any]]:
     out: list[dict[str, Any]] = []
     seen: set[str] = set()
     same_iter, cross_iter = iter(same), iter(cross)
     while len(out) < limit:
-        want_cross = len(out) % CROSS_EVERY == CROSS_EVERY - 1
+        want_cross = len(out) % every == every - 1
         first, second = (cross_iter, same_iter) if want_cross else (same_iter, cross_iter)
         item = next(first, None) or next(second, None)
         if item is None:

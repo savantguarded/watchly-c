@@ -10,7 +10,7 @@ from typing import Any, Literal
 from loguru import logger
 
 from app.core.constants import CONTEXT_LOG_KEY, DISCOVER_ONLY_EXTRA
-from app.core.settings import CatalogConfig, UserSettings
+from app.core.settings import DEFAULT_YEAR_MIN, CatalogConfig, UserSettings
 from app.models.library import LibraryCollection, StremioLibraryItem
 from app.models.profile import TasteProfile
 from app.services.profile.scorer import ProfileScorer
@@ -25,6 +25,7 @@ from app.services.recommendation.scoring import RecommendationScoring
 from app.services.recommendation.utils import content_type_to_mtype, resolve_tmdb_id
 from app.services.redis_service import redis_service
 from app.services.tmdb.service import TMDBService
+from app.watchly_c.mixed_context import TypeState, blend
 from app.watchly_c.relevance import BASE_FLOOR, MIN_VOTES, clears_floor, quality, row_size
 from app.watchly_c.row_slots import fill_slots
 from app.watchly_c.seeds import choose_seeds, today
@@ -34,7 +35,7 @@ CONTEXT_CONFIG_ID = "watchly.ctx"
 CONTEXT_PREFIX = "watchly.ctx."
 LOG_TTL_SECONDS = 45 * 86400
 # Bumped when the rules for choosing a day's rows change, so a day already chosen is chosen again.
-LOG_VERSION = 2
+LOG_VERSION = 3
 # Widening levels: more pages and a lower vote floor each time, only while a row is short.
 LEVELS = 3
 ANNIVERSARIES = (5, 10, 15, 20, 25, 30, 35, 40)
@@ -327,12 +328,12 @@ def is_eligible(spec: Spec, today_: Today) -> bool:
     return True
 
 
-def choose_specs(content_type: str, today_: Today, shown: dict[str, str], rng: random.Random, count: int) -> list[Spec]:
-    """`count` specs for a type, in slot order. Pinned rows come first. The rest cycle
-    through season, moment and evergreen kinds, taking the spec shown longest ago in
-    each, so every row that fits the day gets its turn. A kind with nothing that fits
-    (no season, a dry weekday) hands its place to the evergreen rows."""
-    usable = [s for s in SPECS if content_type in s.types and is_eligible(s, today_)]
+def choose_specs(types: list[str], today_: Today, shown: dict[str, str], rng: random.Random, count: int) -> list[Spec]:
+    """`count` distinct specs for a mixed set of rows, in slot order. Pinned rows come
+    first. The rest cycle through season, moment and evergreen kinds, taking the spec
+    shown longest ago in each, so every row that fits the day gets its turn. A kind with
+    nothing that fits (no season, a dry weekday) hands its place to the evergreen rows."""
+    usable = [s for s in SPECS if set(s.types) & set(types) and is_eligible(s, today_)]
     chosen = [s for s in usable if s.pinned][:count]
     misses = 0
     kinds = itertools.cycle(SLOT_KINDS)
@@ -360,7 +361,8 @@ async def context_catalogs(
     year_min: int,
     row_slots: dict[str, dict[str, str]],
 ) -> list[dict[str, Any]]:
-    """Today's seasonal and contextual rows, as `watchly.ctx.1..3` slots per type.
+    """Today's seasonal and contextual rows: `config.rows` in all, as `watchly.ctx.1..n`
+    slots under one type, each row blending movies and series where it can.
 
     What a slot shows changes with the day, its id doesn't, so Nuvio keeps each where
     the user put it. The first build of a day records its picks and later builds reuse
@@ -373,44 +375,36 @@ async def context_catalogs(
         return []
 
     day = today()
+    key = f"{config.rows}:{'+'.join(types)}"
     raw = await redis_service.get(CONTEXT_LOG_KEY.format(token=token)) if token else None
     log: dict[str, Any] = json.loads(raw) if raw else {}
-    if log.get("day") != day.isoformat() or log.get("v") != LOG_VERSION:
-        log = {"v": LOG_VERSION, "day": day.isoformat(), "picks": {}, "counts": {}, "shown": log.get("shown", {})}
+    if log.get("v") != LOG_VERSION or log.get("day") != day.isoformat():
+        log = {"v": LOG_VERSION, "day": day.isoformat(), "shown": log.get("shown", {})}
 
-    missing = [t for t in types if t not in log["picks"] or log["counts"].get(t) != config.rows]
-    if missing:
+    if log.get("key") != key:
         movie_pool = [i for i in library.loved + library.liked + library.watched if i.type == "movie"]
-        today_ = Today(day, await rains_today(day), bool(movie_pool))
-        for content_type in missing:
-            shown = log["shown"].setdefault(content_type, {})
-            rng = random.Random(f"{token}:{day.isoformat()}:{content_type}")
-            picks = []
-            for spec in choose_specs(content_type, today_, shown, rng, config.rows):
-                shown[spec.key] = day.isoformat()
-                picks.append(await _pick(token, spec, content_type, day, movie_pool, last_watched, year_min))
-            log["picks"][content_type] = picks
-            log["counts"][content_type] = config.rows
+        today_ = Today(day, await rains_today(day), bool(movie_pool) and "movie" in types)
+        rng = random.Random(f"{token}:{day.isoformat()}")
+        picks = []
+        for spec in choose_specs(types, today_, log["shown"], rng, config.rows):
+            log["shown"][spec.key] = day.isoformat()
+            picks.append(await _pick(token, spec, day, movie_pool, last_watched, year_min))
+        log["picks"], log["key"] = picks, key
         if token:
             await redis_service.set(CONTEXT_LOG_KEY.format(token=token), json.dumps(log), LOG_TTL_SECONDS)
 
+    home_type = types[0]
     extra = [] if config.display_at_home else DISCOVER_ONLY_EXTRA
     catalogs = []
-    for content_type in types:
-        for slot, pick in enumerate(log["picks"][content_type], start=1):
-            row_slots.setdefault(content_type, {})[f"ctx.{slot}"] = pick["definition"]
-            catalogs.append(
-                {"type": content_type, "id": f"{CONTEXT_PREFIX}{slot}", "name": pick["name"], "extra": extra}
-            )
-    return fill_slots(
-        catalogs, CONTEXT_PREFIX, {t: config.rows for t in types}, config.name or "Seasonal & contextual", extra
-    )
+    for slot, pick in enumerate(log["picks"], start=1):
+        row_slots.setdefault(home_type, {})[f"ctx.{slot}"] = pick["definition"]
+        catalogs.append({"type": home_type, "id": f"{CONTEXT_PREFIX}{slot}", "name": pick["name"], "extra": extra})
+    return fill_slots(catalogs, CONTEXT_PREFIX, {home_type: config.rows}, config.name or "Seasonal & contextual", extra)
 
 
 async def _pick(
     token: str | None,
     spec: Spec,
-    content_type: str,
     day: date,
     movie_pool: list[StremioLibraryItem],
     last_watched: Callable[[StremioLibraryItem], Any],
@@ -423,7 +417,7 @@ async def _pick(
         seed = (await choose_seeds(token, movie_pool, 1, "people", last_watched))[0]
         arg, fields["person"] = seed.id, _title(seed)
     elif spec.key == "decade":
-        decades = list(range(max(1970, year_min // 10 * 10), day.year // 10 * 10 + 1, 10))
+        decades = list(range(max(DEFAULT_YEAR_MIN, year_min // 10 * 10), day.year // 10 * 10 + 1, 10))
         arg = str(decades[day.toordinal() % len(decades)])
         fields["decade"] = arg
     return {"definition": f"{spec.key}:{arg}" if arg else spec.key, "name": spec.name.format(**fields)}
@@ -488,6 +482,17 @@ class ContextRowService:
             self.tmdb_service, usable[: row_size(limit)], content_type, user_settings=self.user_settings
         )
         return filter_watched_by_imdb(enriched, watched_imdb)
+
+    async def get_mixed(
+        self, catalog_id: str, types: list[str], states: dict[str, TypeState], claimed: dict[str, set[int]], limit: int
+    ) -> list[dict[str, Any]]:
+        key = catalog_id.removeprefix(CONTEXT_PREFIX).partition(":")[0]
+        row_types = [t for t in types if t in SPEC_BY_KEY[key].types]
+
+        async def build(content_type: str, state: TypeState, share: int) -> list[dict[str, Any]]:
+            return await self.get_recommendations(catalog_id, content_type, state[0], state[1], state[2], share)
+
+        return await blend(row_types, states, claimed, limit, build)
 
     async def _looks(self, spec: Spec, content_type: str, plan: Plan) -> tuple[Look, ...]:
         if spec.build:

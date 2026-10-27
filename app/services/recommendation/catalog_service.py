@@ -29,9 +29,10 @@ from app.services.user_cache import user_cache
 from app.services.warmup import warmup_service
 from app.watchly_c.context_rows import ContextRowService
 from app.watchly_c.dedupe import claimed_by_earlier_rows, record_claims
-from app.watchly_c.mixed_rows import MIXED_ITEM_PREFIX, mixed_recommendations
+from app.watchly_c.mixed_context import enabled_types, other_type_state
+from app.watchly_c.mixed_rows import MIXED_ITEM_PREFIX, OTHER_TYPE, mixed_recommendations
 from app.watchly_c.relevance import RankedItemService
-from app.watchly_c.theme_rows import WideThemeService
+from app.watchly_c.theme_rows import MIXED_THEME, WideThemeService, mixed_theme_recommendations
 
 REFRESH_LOCK_PREFIX = "watchly:refreshlock:"
 # Long enough to cover a slow rebuild, short enough that a worker killed mid-refresh
@@ -227,6 +228,7 @@ class CatalogService:
                 limit=DEFAULT_CATALOG_LIMIT,
                 user_settings=ctx.user_settings,
                 claimed=claimed,
+                token=ctx.token,
             )
 
             logger.debug(f"Returning {len(recommendations)} items for {content_type}")
@@ -381,9 +383,23 @@ class CatalogService:
         limit: int,
         user_settings: UserSettings | None = None,
         claimed: dict[str, set[int]] | None = None,
+        token: str | None = None,
     ) -> list[dict[str, Any]]:
         """Route to appropriate recommendation service based on catalog ID."""
         claimed = claimed or {}
+        mixed_theme = MIXED_THEME.match(catalog_id)
+        if user_settings and token and (catalog_id.startswith("watchly.ctx.") or mixed_theme):
+            types = enabled_types(user_settings, "watchly.theme" if mixed_theme else "watchly.ctx")
+            states = {content_type: (profile, watched_tmdb, watched_imdb)}
+            if OTHER_TYPE[content_type] in types:
+                states[OTHER_TYPE[content_type]] = await other_type_state(
+                    token, library_items, content_type, user_settings
+                )
+            types = [content_type] + [t for t in types if t != content_type]
+            if mixed_theme:
+                return await mixed_theme_recommendations(services["theme"], catalog_id, types, states, claimed, limit)
+            return await services["ctx"].get_mixed(catalog_id, types, states, claimed, limit)
+
         if catalog_id.startswith(MIXED_ITEM_PREFIX):
             return await mixed_recommendations(
                 services["item"], catalog_id, content_type, watched_tmdb, watched_imdb, library_items, limit, claimed

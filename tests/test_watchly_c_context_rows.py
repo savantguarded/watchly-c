@@ -1,4 +1,5 @@
 import asyncio
+import json
 import random
 from datetime import date, timedelta
 
@@ -24,8 +25,11 @@ def at(day: str, rain: bool = False, people: bool = True) -> Today:
     return Today(date.fromisoformat(day), rain, people)
 
 
-def keys(content_type: str, today_: Today, shown: dict[str, str] | None = None, count: int = 3) -> list[str]:
-    return [s.key for s in choose_specs(content_type, today_, shown or {}, random.Random(1), count)]
+def keys(types: list[str], today_: Today, shown: dict[str, str] | None = None, count: int = 3) -> list[str]:
+    return [s.key for s in choose_specs(types, today_, shown or {}, random.Random(1), count)]
+
+
+BOTH = ["movie", "series"]
 
 
 def test_season_rows_only_appear_inside_their_window():
@@ -46,19 +50,19 @@ def test_moments_follow_the_weekday_and_the_rain():
 
 
 def test_every_slot_is_filled_even_on_a_quiet_day():
-    quiet = at("2026-04-14")
-
-    for content_type in ("movie", "series"):
-        assert len(keys(content_type, quiet)) == 3
+    for types in (["movie"], ["series"], BOTH):
+        assert len(keys(types, at("2026-04-14"), count=4)) == 4
 
 
-def test_types_only_get_specs_that_suit_them():
-    assert "people" not in keys("series", at("2026-04-14"), {"decade": "2026-04-13", "hidden_gems": "2026-04-13"})
-    assert all(
-        content_type in SPEC_BY_KEY[k].types
-        for content_type in ("movie", "series")
-        for k in keys(content_type, at("2026-10-27"))
-    )
+def test_a_type_only_gets_specs_that_suit_it():
+    assert not {"people", "on_this_day"} & set(keys(["series"], at("2026-04-14"), count=6))
+    assert "short_binges" not in keys(["movie"], at("2026-04-14"), count=6)
+
+
+def test_no_row_repeats_across_movies_and_series():
+    for count in range(1, 9):
+        picked = keys(BOTH, at("2026-10-27", rain=True), count=count)
+        assert len(picked) == len(set(picked)) == count
 
 
 def test_the_rotating_slot_cycles_through_every_evergreen_row():
@@ -67,14 +71,14 @@ def test_the_rotating_slot_cycles_through_every_evergreen_row():
     day = date(2026, 4, 14)
     for n in range(10):
         today_ = Today(day + timedelta(days=n), False, True)
-        for spec in choose_specs("movie", today_, shown, random.Random(n), 3):
+        for spec in choose_specs(BOTH, today_, shown, random.Random(n), 4):
             shown[spec.key] = today_.day.isoformat()
             seen.add(spec.key)
-    assert seen >= {s.key for s in SPECS if s.kind == "evergreen" and "movie" in s.types}
+    assert seen >= {s.key for s in SPECS if s.kind == "evergreen"}
 
 
 def test_no_people_row_without_a_movie_to_build_it_from():
-    assert "people" not in keys("movie", at("2026-04-14", people=False), {})
+    assert "people" not in keys(["movie"], at("2026-04-14", people=False), {}, count=6)
 
 
 class FakeRedis:
@@ -126,14 +130,15 @@ def build(config=None, library=None):
     return rows, slots
 
 
-def test_each_type_gets_three_numbered_slots_with_a_definition_each(world):
+def test_rows_are_numbered_slots_under_one_type_with_a_definition_each(world):
     rows, slots = build()
 
-    assert sorted(r["id"] for r in rows if r["type"] == "movie") == [f"{CONTEXT_PREFIX}{n}" for n in (1, 2, 3)]
-    assert set(slots) == {"movie", "series"}
-    assert set(slots["movie"]) == {"ctx.1", "ctx.2", "ctx.3"}
+    assert [r["id"] for r in rows] == [f"{CONTEXT_PREFIX}{n}" for n in (1, 2, 3)]
+    assert {r["type"] for r in rows} == {"movie"}
+    assert set(slots) == {"movie"}
+    assert list(slots["movie"]) == ["ctx.1", "ctx.2", "ctx.3"]
     assert slots["movie"]["ctx.1"] == "on_this_day"
-    assert slots["series"]["ctx.1"] in {"spooky", "spooky_gentle", "african"}
+    assert len(set(slots["movie"].values())) == 3
 
 
 def test_a_days_picks_are_stable_across_builds(world):
@@ -145,8 +150,9 @@ def test_a_days_picks_are_stable_across_builds(world):
 
 def test_a_disabled_catalog_or_type_gives_no_rows(world):
     assert build(CatalogConfig(id="watchly.ctx", enabled=False))[0] == []
-    rows, _ = build(CatalogConfig(id="watchly.ctx", enabled_series=False, rows=3))
-    assert {r["type"] for r in rows} == {"movie"}
+    rows, slots = build(CatalogConfig(id="watchly.ctx", enabled_movie=False, rows=3))
+    assert {r["type"] for r in rows} == {"series"}
+    assert "on_this_day" not in slots["series"].values()
 
 
 def test_a_new_day_moves_on_to_rows_not_shown_yet(world, monkeypatch):
@@ -154,7 +160,7 @@ def test_a_new_day_moves_on_to_rows_not_shown_yet(world, monkeypatch):
     monkeypatch.setattr(context_rows, "today", lambda: date(2026, 10, 28))
     _, second = build()
 
-    assert first["movie"]["ctx.3"] != second["movie"]["ctx.3"]
+    assert first["movie"]["ctx.2"] != second["movie"]["ctx.2"]
 
 
 def result(tmdb_id: int, avg: float = 7.6, votes: int = 900) -> dict:
@@ -221,7 +227,7 @@ def test_the_selector_offers_the_catalog_and_its_rows_map_back_to_it():
 
 def test_on_this_day_is_for_movies_only():
     assert SPEC_BY_KEY["on_this_day"].types == ("movie",)
-    assert "on_this_day" not in keys("series", at("2026-04-14"))
+    assert "on_this_day" not in keys(["series"], at("2026-04-14"), count=6)
 
 
 def test_rows_ask_tmdb_for_english_unless_they_are_about_somewhere_else():
@@ -260,15 +266,8 @@ def test_hidden_gems_leave_out_popular_and_recent_titles(monkeypatch):
 def test_movies_always_lead_with_on_this_day_even_when_it_rains():
     for rain in (False, True):
         for count in (1, 3, 6):
-            assert keys("movie", at("2026-10-23", rain=rain), count=count)[0] == "on_this_day"
-    assert keys("movie", at("2026-10-23", rain=True), count=1) == ["on_this_day"]
-
-
-def test_any_row_count_gives_that_many_distinct_rows():
-    for content_type in ("movie", "series"):
-        for count in range(1, 7):
-            picked = keys(content_type, at("2026-10-23", rain=True), count=count)
-            assert len(picked) == count == len(set(picked))
+            assert keys(BOTH, at("2026-10-23", rain=rain), count=count)[0] == "on_this_day"
+    assert keys(BOTH, at("2026-10-23", rain=True), count=1) == ["on_this_day"]
 
 
 def test_changing_the_row_count_rebuilds_the_days_picks(world):
@@ -276,18 +275,47 @@ def test_changing_the_row_count_rebuilds_the_days_picks(world):
     rows, five = build(CatalogConfig(id="watchly.ctx", rows=5))
 
     assert len(five["movie"]) == 5 and len(three["movie"]) == 3
-    assert sum(r["type"] == "movie" for r in rows) == 5
+    assert len(rows) == 5
 
 
 def test_a_days_picks_from_before_the_rules_changed_are_chosen_again(world):
     build()
-    import json
-
     stale = json.loads(next(iter(world.data.values())))
     stale["v"] = 1
-    stale["picks"]["series"][1] = {"definition": "on_this_day", "name": "On This Day, 27 Oct"}
+    stale["picks"] = [{"definition": "spooky", "name": "Spooky Season"}] * 3
     world.data[next(iter(world.data))] = json.dumps(stale)
 
     _, slots = build()
 
-    assert "on_this_day" not in slots["series"].values()
+    assert list(slots["movie"].values())[0] == "on_this_day"
+
+
+def _row_states():
+    return {t: (None, set(), set()) for t in BOTH}
+
+
+def test_a_row_blends_movies_and_series_card_by_card(monkeypatch):
+    monkeypatch.setattr(context_rows.RecommendationMetadata, "fetch_batch", fake_typed_batch)
+    monkeypatch.setattr(context_rows, "today", lambda: date(2026, 10, 27))
+    service = ContextRowService(FakeTMDB(), get_default_settings())
+
+    out = asyncio.run(service.get_mixed(f"{CONTEXT_PREFIX}late_night", BOTH, _row_states(), {}, 20))
+
+    assert len(out) == 20
+    assert [m["type"] for m in out[:6]] == ["movie", "series"] * 3
+
+
+def test_a_movie_only_row_stays_movies_and_claimed_titles_are_left_out(monkeypatch):
+    monkeypatch.setattr(context_rows.RecommendationMetadata, "fetch_batch", fake_typed_batch)
+    monkeypatch.setattr(context_rows, "today", lambda: date(2026, 10, 27))
+    service = ContextRowService(FakeTMDB(), get_default_settings())
+
+    out = asyncio.run(service.get_mixed(f"{CONTEXT_PREFIX}on_this_day", BOTH, _row_states(), {"movie": {100, 101}}, 20))
+
+    assert {m["type"] for m in out} == {"movie"}
+    assert not {100, 101} & {m["_tmdb_id"] for m in out}
+
+
+async def fake_typed_batch(tmdb_service, items, media_type, user_settings=None):
+    kind = "series" if media_type in ("tv", "series") else "movie"
+    return [{"id": f"tt{kind}{i['id']}", "_tmdb_id": i["id"], "type": kind} for i in items]

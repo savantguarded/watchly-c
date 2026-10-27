@@ -16,6 +16,7 @@ from app.services.user_cache import user_cache
 from app.watchly_c.context_rows import CONTEXT_CONFIG_ID, context_catalogs
 from app.watchly_c.mixed_rows import mixed_item_rows
 from app.watchly_c.row_slots import THEME_SLOTS, fill_slots
+from app.watchly_c.theme_rows import mixed_theme_catalogs
 from app.watchly_c.seeds import choose_seeds
 
 
@@ -261,6 +262,18 @@ class DynamicCatalogService:
     ) -> list[dict[str, Any]]:
         llm_config = resolve_llm_config(user_settings)
 
+        if app_settings.WIDE_THEME_ROWS:
+
+            async def build_rows(content_type: str, count: int, avoid_genres: set[int], avoid_keywords: set[int]):
+                _, rows = await self._build_theme_rows_for_type(
+                    library_items, content_type, llm_config, token, user_settings, count, avoid_genres, avoid_keywords
+                )
+                return rows
+
+            return await mixed_theme_catalogs(
+                build_rows, enabled_movie, enabled_series, display_at_home, row_count, row_slots
+            )
+
         tasks = []
         if enabled_movie:
             tasks.append(
@@ -307,6 +320,8 @@ class DynamicCatalogService:
         token: str | None,
         user_settings: UserSettings | None = None,
         row_count: int = THEME_SLOTS,
+        avoid_genres: set[int] | None = None,
+        avoid_keywords: set[int] | None = None,
     ) -> tuple[str, list[Any]]:
         logger.info(f"[Theme Catalogs] Building rows for {media_type}")
 
@@ -329,7 +344,14 @@ class DynamicCatalogService:
             logger.warning(f"Failed to build profile for {media_type}")
             return media_type, []
 
-        rows = await self.row_generator.generate_rows(profile, media_type, llm_config=llm_config, count=row_count)
+        rows = await self.row_generator.generate_rows(
+            profile,
+            media_type,
+            llm_config=llm_config,
+            count=row_count,
+            avoid_genres=avoid_genres,
+            avoid_keywords=avoid_keywords,
+        )
         return media_type, rows
 
     # --- Item-based rows ---

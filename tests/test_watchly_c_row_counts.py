@@ -80,8 +80,43 @@ def test_based_on_all_loved_and_liked_are_retired_from_the_selector():
     assert {"watchly.rec", "watchly.theme", "watchly.ctx", "watchly.item"} <= ids
 
 
-def test_a_theme_or_seasonal_config_saved_before_counts_keeps_its_three_rows():
-    assert CatalogConfig(id="watchly.theme", rows=1).rows == 3
-    assert CatalogConfig.model_validate({"id": "watchly.ctx"}).rows == 3
+def test_a_theme_or_seasonal_config_saved_before_counts_keeps_its_six_rows():
+    assert CatalogConfig(id="watchly.theme", rows=1).rows == 6
+    assert CatalogConfig.model_validate({"id": "watchly.ctx"}).rows == 6
     assert CatalogConfig(id="watchly.theme", rows=2).rows == 2
     assert CatalogConfig(id="watchly.item", rows=1).rows == 1
+
+
+def test_titles_are_written_not_assembled_from_tags():
+    from app.watchly_c.theme_titles import title_for
+
+    names = {7: "revenge", 8: "woman director"}
+
+    assert title_for([("a", "g", 53), ("f", "k", 7)], names) == "Revenge, Served Cold"
+    assert title_for([("a", "g", 53), ("f", "k", 8)], names) == "Edge-of-Your-Seat Thrillers"
+    assert title_for([("a", "g", 80), ("f", "ct", "KR")], names) == "Korean Crime"
+    assert title_for([("a", "g", 80), ("f", "g", 35)], names) == "Crime Meets Comedy"
+
+
+def test_only_keywords_with_a_title_line_become_rows(monkeypatch):
+    service = RowGeneratorService.__new__(RowGeneratorService)
+    names = {**KEYWORDS, 1: "revenge", 2: "woman director"}
+
+    async def resolve(self, ids):
+        return {k: names[k] for k in ids}
+
+    monkeypatch.setattr(RowGeneratorService, "_resolve_keyword_names", resolve)
+    for seed in range(20):
+        random.seed(seed)
+        rows = asyncio.run(service.generate_rows(PROFILE, "movie", llm_config=None, count=6))
+        assert not any("k2" in r.id.split(".") or ".f:k2" in r.id or "a:k2" in r.id for r in rows)
+        assert all(r.title != "Woman Director" for r in rows)
+
+
+def test_rows_for_the_second_type_avoid_what_the_first_used():
+    random.seed(1)
+    genres = PROFILE.get_top_genres(limit=8)
+    rows = build_fallback_rows(genres, [], [], [], {}, "series", 3, avoid_genres={28, 53, 18})
+
+    anchors = {int(v) for axes, _ in rows for role, kind, v in axes if role == "a" and kind == "g"}
+    assert not anchors & {28, 53, 18}

@@ -13,11 +13,11 @@ from app.services.poster_ratings.factory import PosterProvider
 MAX_ITEM_ROWS = 4
 # Rows a catalog can emit per content type, as far as the configure page lets the user go.
 # Watchly C: genre & keyword and seasonal & contextual rows are countable too.
-THEME_DEFAULT_ROWS = 3
+THEME_DEFAULT_ROWS = 6
 # Accounts saved before these catalogs were countable carry rows=1, the field's default, with
-# the rows they had been getting (3). Treating 1 as unset keeps those; the page offers 2 and up.
+# the rows they had been getting (3 per type, 6 in all). Treating 1 as unset keeps those; the page offers 2 and up.
 ROW_MINIMUMS = {"watchly.theme": 2, "watchly.ctx": 2}
-ROW_LIMITS = {"watchly.item": MAX_ITEM_ROWS, "watchly.theme": 6, "watchly.ctx": 6}
+ROW_LIMITS = {"watchly.item": MAX_ITEM_ROWS, "watchly.theme": 10, "watchly.ctx": 10}
 
 
 class CatalogConfig(BaseModel):
@@ -192,6 +192,12 @@ CATALOG_DESCRIPTIONS = {
     ),
 }
 
+if app_config.WIDE_THEME_ROWS:
+    CATALOG_DESCRIPTIONS["watchly.theme"] += (
+        " Rows is the total across movies and series, and each row blends both. No genre or keyword is used"
+        " for two rows."
+    )
+
 if app_config.WEIGHTED_ITEM_SEEDS:
     CATALOG_DESCRIPTIONS["watchly.item"] = (
         "Recommends items similar to one you watched or loved. Seeds are picked once a day, weighted toward"
@@ -207,7 +213,7 @@ if app_config.MIXED_ITEM_ROWS:
 
 if app_config.CONTEXT_ROWS:
     CATALOG_DESCRIPTIONS["watchly.ctx"] = (
-        "Seasonal and contextual rows, new each day and each given its turn. Rows is the number per type."
+        "Seasonal and contextual rows, new each day and each given its turn. Rows is the total across movies and series, and each row blends both."
         " Movies always lead with On This Day. The rest cycle between the time of year (Spooky Season, Holiday"
         " Season, Valentine's, Awards Season, Summer Blockbusters, African Stories), the moment (Friday Night,"
         " Sunday Slow, Rainy Day) and an evergreen pick (Late Night Watch, Hidden Gems, a Decade Time Machine,"
@@ -258,7 +264,7 @@ def get_default_settings() -> UserSettings:
                         enabled_series=True,
                         display_at_home=True,
                         shuffle=False,
-                        rows=3,
+                        rows=THEME_DEFAULT_ROWS,
                     )
                 ]
                 if app_config.CONTEXT_ROWS

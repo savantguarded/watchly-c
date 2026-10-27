@@ -93,6 +93,13 @@ def on_topic(item_genres: Iterable[int], seed_genres: Iterable[int]) -> bool:
     return bool(genres & set(seed_genres)) and not has_off_topic(genres, seed_genres)
 
 
+def language_ok(item: dict[str, Any], seed_language: str | None) -> bool:
+    """English and the seed's own language. A subtitled title only comes up in a row
+    built around a title in that language. Bare Simkl candidates carry no language."""
+    language = item.get("original_language")
+    return not language or language == "en" or language == seed_language
+
+
 def relevance(item: dict[str, Any], seed: Seed) -> float:
     genres = set(item.get("genre_ids") or ())
     if genres:
@@ -114,7 +121,11 @@ def relevance(item: dict[str, Any], seed: Seed) -> float:
 def rank(items: Iterable[dict[str, Any]], seed: Seed, mtype: str, floor: float) -> list[dict[str, Any]]:
     """Relevance to the seed, scaled by quality. Quality only scales it, so a close match
     at 7.2 outranks a loose one at 8.5."""
-    kept = [i for i in items if on_topic(i.get("genre_ids") or (), seed.genres) and clears_floor(i, floor)]
+    kept = [
+        i
+        for i in items
+        if on_topic(i.get("genre_ids") or (), seed.genres) and language_ok(i, seed.language) and clears_floor(i, floor)
+    ]
     return sorted(kept, key=lambda i: relevance(i, seed) * (0.5 + 0.5 * quality(i, mtype)), reverse=True)
 
 

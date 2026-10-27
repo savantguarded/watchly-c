@@ -238,3 +238,30 @@ def test_a_short_seed_pool_still_declares_every_slot_and_maps_only_the_filled_on
 
     assert [r["id"] for r in rows] == [f"{MIXED_ITEM_PREFIX}{n}" for n in range(1, 5)]
     assert set(slots["movie"]) == {"item.mix.1", "item.mix.2"}
+
+
+class WarShipTMDB(FakeTMDB):
+    """A war thriller (Crimson Tide's shape) whose keyword search also turns up a vampire drama."""
+
+    async def get_movie_details(self, tmdb_id):
+        return {
+            "genres": [{"id": 28}, {"id": 80}, {"id": 18}, {"id": 10752}],
+            "original_language": "en",
+            "keywords": {"keywords": [{"id": 9}]},
+        }
+
+    async def get_discover(self, media_type, with_genres=None, sort_by="popularity.desc", page=1, **kwargs):
+        def show(tmdb_id, genres, lang="en"):
+            return {**discovered(tmdb_id), "genre_ids": genres, "original_language": lang}
+
+        if kwargs.get("with_keywords"):
+            return {"results": [show(1, [18, 10765]), show(2, [10759, 80]), show(3, [10759, 80], "ko")]}
+        return {"results": []}
+
+
+def test_cross_type_picks_must_share_one_of_the_seeds_leading_genres_and_its_language(patched):
+    out, _ = run_mixed(get_default_settings(), WarShipTMDB())
+
+    series = {m["id"] for m in out if m["type"] == "series"}
+    assert "tt9002" in series
+    assert not series & {"tt9001", "tt9003"}

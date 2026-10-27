@@ -216,3 +216,41 @@ def test_the_selector_offers_the_catalog_and_its_rows_map_back_to_it():
 
     assert any(c.id == "watchly.ctx" and c.enabled for c in defaults.catalogs)
     assert get_config_id({"id": "watchly.ctx.2"}) == "watchly.ctx"
+
+
+def test_on_this_day_is_for_movies_only():
+    assert SPEC_BY_KEY["on_this_day"].types == ("movie",)
+    assert "on_this_day" not in keys("series", at("2026-04-14"))
+
+
+def test_rows_ask_tmdb_for_english_unless_they_are_about_somewhere_else():
+    tmdb = FakeTMDB()
+    monkeypatched = ContextRowService(tmdb, get_default_settings())
+
+    async def run(key):
+        tmdb.calls.clear()
+        await monkeypatched.get_recommendations(f"{CONTEXT_PREFIX}{key}", "movie", None, set(), set(), 20)
+        return {c.get("with_original_language") for c in tmdb.calls}
+
+    assert asyncio.run(run("late_night")) == {"en"}
+    assert asyncio.run(run("african")) == {None}
+
+
+def test_hidden_gems_leave_out_popular_and_recent_titles(monkeypatch):
+    tmdb = FakeTMDB()
+    popular = {**result(7), "popularity": 400.0}
+    obscure = {**result(8), "popularity": 12.0}
+
+    async def discover(media_type, page=1, **kwargs):
+        tmdb.calls.append(kwargs)
+        return {"results": [popular, obscure]}
+
+    tmdb.get_discover = discover
+    monkeypatch.setattr(context_rows.RecommendationMetadata, "fetch_batch", fake_fetch_batch)
+    monkeypatch.setattr(context_rows, "today", lambda: date(2026, 10, 27))
+    service = ContextRowService(tmdb, get_default_settings())
+
+    out = asyncio.run(service.get_recommendations(f"{CONTEXT_PREFIX}hidden_gems", "series", None, set(), set(), 20))
+
+    assert [m["_tmdb_id"] for m in out] == [8]
+    assert all(c["first_air_date.lte"] <= "2024-10-27" for c in tmdb.calls)

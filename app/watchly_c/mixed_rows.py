@@ -22,7 +22,7 @@ from app.services.recommendation.metadata import RecommendationMetadata
 from app.services.recommendation.utils import resolve_tmdb_id
 from app.services.tmdb.genre import movie_genres, series_genres
 from app.services.tmdb.service import TMDBService
-from app.watchly_c.relevance import clears_floor, has_off_topic, quality, rating_floor
+from app.watchly_c.relevance import clears_floor, has_off_topic, language_ok, quality, rating_floor
 from app.watchly_c.row_slots import fill_slots
 from app.watchly_c.seeds import choose_seeds, rating_of
 from app.watchly_c.watched_tmdb import watched_tmdb_ids
@@ -241,7 +241,17 @@ async def _cross_type(
     ranked = filter_by_genres(filter_items_by_settings(ranked, user_settings), watched_other | claimed, excluded)
     if settings.RELEVANCE_RANKING:
         floor = rating_floor(seed_rating)
-        ranked = [i for i in ranked if clears_floor(i, floor) and not has_off_topic(i.get("genre_ids") or (), genres)]
+        # A keyword match alone isn't enough: the title must share one of the two leading
+        # genres the discover query itself was built on, or a war film gets a vampire drama.
+        lead = set(genres[:2])
+        ranked = [
+            i
+            for i in ranked
+            if clears_floor(i, floor)
+            and not has_off_topic(i.get("genre_ids") or (), genres)
+            and (not i.get("genre_ids") or lead & set(i["genre_ids"]))
+            and language_ok(i, details.get("original_language"))
+        ]
         ranked.sort(key=lambda i: (-hits[i["id"]], -quality(i, other)))
     # Over-fetch for what the watched filter takes out; truncate before the costly enrichment.
     enriched = await RecommendationMetadata.fetch_batch(tmdb_service, ranked[: count * 2], other, user_settings)

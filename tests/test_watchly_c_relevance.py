@@ -66,6 +66,15 @@ def test_rank_drops_poor_ratings_and_off_topic_titles():
     assert [i["id"] for i in rank(items, SEED, "movie", BASE_FLOOR)] == [1]
 
 
+def test_foreign_language_titles_are_left_out_unless_the_seed_is_in_that_language():
+    korean = title(1, original_language="ko") | {"original_language": "ko"}
+    english = title(2)
+
+    assert [i["id"] for i in rank([korean, english], SEED, "movie", BASE_FLOOR)] == [2]
+    korean_seed = Seed(genres=(53, 18), language="ko", year=2015, keywords=())
+    assert {i["id"] for i in rank([korean, english], korean_seed, "movie", BASE_FLOOR)} == {1, 2}
+
+
 def test_rows_are_asked_for_more_than_they_show():
     assert row_size(20) > 20
 

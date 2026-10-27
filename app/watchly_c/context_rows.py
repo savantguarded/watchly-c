@@ -57,6 +57,8 @@ class Look:
     recent_days: int | None = None
     dates: tuple[date, date] | None = None
     pages: int = 3
+    # Rows are English by default; the rows about somewhere else switch it off.
+    language: str | None = "en"
     extra: dict[str, Any] = field(default_factory=dict)
 
     def params(self, mtype: str, level: int, floor: float, day: date, keyword_ids: list[int]) -> dict[str, Any]:
@@ -71,6 +73,8 @@ class Look:
             params["without_genres"] = self.without_genres
         if keyword_ids:
             params["with_keywords"] = "|".join(map(str, keyword_ids))
+        if self.language:
+            params["with_original_language"] = self.language
         if self.countries:
             params["with_origin_country"] = self.countries
         shortest, longest = self.runtime
@@ -107,6 +111,7 @@ class Spec:
     window: tuple[tuple[int, int], tuple[int, int]] | None = None
     floor: float = BASE_FLOOR
     min_votes: int = MIN_VOTES
+    max_popularity: float | None = None
 
 
 async def _on_this_day(service: "ContextRowService", plan: Plan) -> tuple[Look, ...]:
@@ -129,7 +134,10 @@ async def _decade(service: "ContextRowService", plan: Plan) -> tuple[Look, ...]:
 
 async def _hidden_gems(service: "ContextRowService", plan: Plan) -> tuple[Look, ...]:
     genres = "|".join(str(g) for g, _ in plan.profile.get_top_genres(limit=3)) if plan.profile else None
-    return (Look(genres=genres or None, votes=150, rating=7.4, extra={"vote_count.lte": 3000}),)
+    # Recent shows are rated by few voters while everyone is watching them, so a vote
+    # ceiling alone lets a hit through; the date and the popularity cap in the spec don't.
+    old = (date(1950, 1, 1), plan.day - timedelta(days=730))
+    return (Look(genres=genres or None, votes=150, rating=7.4, dates=old, extra={"vote_count.lte": 3000}),)
 
 
 async def _people(service: "ContextRowService", plan: Plan) -> tuple[Look, ...]:
@@ -233,8 +241,8 @@ SPECS: tuple[Spec, ...] = (
         "season",
         "African Stories",
         {
-            "movie": (Look(countries=AFRICA, sort="popularity.desc", votes=30, pages=4),),
-            "series": (Look(countries=AFRICA, sort="popularity.desc", votes=30, pages=4),),
+            "movie": (Look(countries=AFRICA, sort="popularity.desc", votes=30, pages=4, language=None),),
+            "series": (Look(countries=AFRICA, sort="popularity.desc", votes=30, pages=4, language=None),),
         },
         window=((10, 1), (10, 31)),
         # TMDB holds few votes for most African titles, so a vote floor of 100 would empty the row.
@@ -267,7 +275,7 @@ SPECS: tuple[Spec, ...] = (
             "series": (Look(genres="35|18", votes=500, rating=7.3),),
         },
     ),
-    Spec("on_this_day", "moment", "On This Day, {day} {month}", build=_on_this_day),
+    Spec("on_this_day", "moment", "On This Day, {day} {month}", types=("movie",), build=_on_this_day),
     Spec(
         "late_night",
         "evergreen",
@@ -277,7 +285,7 @@ SPECS: tuple[Spec, ...] = (
             "series": (Look(genres="35|80|9648", runtime=(None, 35), votes=500, rating=7.0),),
         },
     ),
-    Spec("hidden_gems", "evergreen", "Hidden Gems for You", build=_hidden_gems),
+    Spec("hidden_gems", "evergreen", "Hidden Gems for You", build=_hidden_gems, max_popularity=40.0),
     Spec("people", "evergreen", "From the People Behind {person}", types=("movie",), build=_people),
     Spec("decade", "evergreen", "Time Machine: the {decade}s", build=_decade),
     Spec(
@@ -463,6 +471,7 @@ class ContextRowService:
                 i
                 for i in filter_by_genres(unique, watched_tmdb, excluded)
                 if clears_floor(i, spec.floor, spec.min_votes)
+                and (spec.max_popularity is None or (i.get("popularity") or 0) <= spec.max_popularity)
             ]
             if len(usable) >= row_size(limit):
                 break

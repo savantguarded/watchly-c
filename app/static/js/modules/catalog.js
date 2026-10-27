@@ -50,8 +50,9 @@ function createCatalogItem(cat, index) {
     // names each row for the day. All would discard a user-supplied name, so the
     // rename button is hidden.
     const isRenamable = !['watchly.theme', 'watchly.item', 'watchly.ctx'].includes(cat.id);
-    // Only the item catalog can emit several rows; each gets its own seed.
-    const hasRowCount = cat.id === 'watchly.item';
+    // Only these catalogs can emit several rows; the limit per catalog comes from the server.
+    const maxRows = window.MAX_ROWS[cat.id];
+    const hasRowCount = maxRows !== undefined;
 
     // Determine active mode for toggle buttons
     const enabledMovie = cat.enabledMovie !== false;
@@ -107,9 +108,9 @@ function createCatalogItem(cat, index) {
         <div class="flex flex-wrap items-center gap-2 pl-10 sm:pl-[5.75rem] lg:ml-auto lg:flex-shrink-0 lg:justify-end lg:pl-0">
             ${hasRowCount ? `<div class="inline-flex h-9 items-center rounded-lg border border-white/10 bg-surface-sunken pl-3 pr-0.5" role="group" aria-label="Number of rows">
                 <span class="mr-1 text-sm text-neutral-300">Rows</span>
-                <button type="button" class="${ROWS_BTN_CLASS}" data-step="-1" aria-label="Fewer rows" ${cat.rows <= 1 ? 'disabled' : ''}>&minus;</button>
+                <button type="button" class="${ROWS_BTN_CLASS}" data-step="-1" aria-label="Fewer rows" ${cat.rows <= (window.MIN_ROWS[cat.id] ?? 1) ? 'disabled' : ''}>&minus;</button>
                 <span class="rows-value w-5 text-center text-sm font-medium text-white">${cat.rows}</span>
-                <button type="button" class="${ROWS_BTN_CLASS}" data-step="1" aria-label="More rows" ${cat.rows >= window.MAX_ITEM_ROWS ? 'disabled' : ''}>+</button>
+                <button type="button" class="${ROWS_BTN_CLASS}" data-step="1" aria-label="More rows" ${cat.rows >= maxRows ? 'disabled' : ''}>+</button>
             </div>` : ''}
             <div class="inline-flex h-9 items-center rounded-lg border border-white/10 bg-surface-sunken p-0.5" role="group" aria-label="Content type">
                 <button type="button" class="${TYPE_BTN_CLASS}" aria-pressed="${activeMode === 'both'}" data-catalog-id="${cat.id}" data-mode="both">Both</button>
@@ -190,11 +191,12 @@ function createCatalogItem(cat, index) {
         btn.addEventListener('click', (e) => {
             e.preventDefault();
             const next = cat.rows + Number(btn.dataset.step);
-            if (next < 1 || next > window.MAX_ITEM_ROWS) return;
+            const minRows = window.MIN_ROWS[cat.id] ?? 1;
+            if (next < minRows || next > window.MAX_ROWS[cat.id]) return;
             cat.rows = next;
             item.querySelector('.rows-value').textContent = String(next);
-            item.querySelector('.rows-btn[data-step="-1"]').disabled = next <= 1;
-            item.querySelector('.rows-btn[data-step="1"]').disabled = next >= window.MAX_ITEM_ROWS;
+            item.querySelector('.rows-btn[data-step="-1"]').disabled = next <= minRows;
+            item.querySelector('.rows-btn[data-step="1"]').disabled = next >= window.MAX_ROWS[cat.id];
         });
     });
 

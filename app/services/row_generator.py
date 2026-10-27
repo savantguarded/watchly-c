@@ -20,6 +20,7 @@ from app.services.llm import llm_service
 from app.services.tmdb.countries import COUNTRY_ADJECTIVES
 from app.services.tmdb.genre import movie_genres, series_genres
 from app.services.tmdb.service import TMDBService, get_tmdb_service
+from app.watchly_c.meta_keywords import is_meta_keyword
 
 GOLD_END = 3
 SILVER_START = 3
@@ -106,11 +107,12 @@ def _build_core_row(
     content_type: str,
     used_genres: set[int],
     used_keywords: set[int],
+    reach: int = 0,
 ) -> tuple[list[tuple[str, str, Any]], str] | None:
     axes: list[tuple[str, str, Any]] = []
     title_parts: list[str] = []
 
-    g = _pick(genres, 0, GOLD_END, used_genres)
+    g = _pick(genres, 0, GOLD_END + reach, used_genres)
     if not g:
         return None
     axes.append((ROLE_ANCHOR, AXIS_GENRE, g[0]))
@@ -118,7 +120,7 @@ def _build_core_row(
     used_genres.add(g[0])
 
     for _ in range(random.randint(1, 2)):
-        k = _pick(keywords, 0, GOLD_END, used_keywords)
+        k = _pick(keywords, 0, GOLD_END + reach, used_keywords)
         if k and k[0] in keyword_names:
             axes.append((ROLE_FLAVOR, AXIS_KEYWORD, k[0]))
             title_parts.append(_keyword_display(keyword_names[k[0]]))
@@ -139,11 +141,12 @@ def _build_blend_row(
     countries: list[tuple[str, float]],
     content_type: str,
     used_genres: set[int],
+    reach: int = 0,
 ) -> tuple[list[tuple[str, str, Any]], str] | None:
     axes: list[tuple[str, str, Any]] = []
     title_parts: list[str] = []
 
-    g = _pick(genres, 0, GOLD_END, used_genres)
+    g = _pick(genres, 0, GOLD_END + reach, used_genres)
     if not g:
         return None
     axes.append((ROLE_ANCHOR, AXIS_GENRE, g[0]))
@@ -152,7 +155,7 @@ def _build_blend_row(
 
     use_country = random.choice([True, False])
     if use_country and countries:
-        c = _pick(countries, 0, SILVER_END)
+        c = _pick(countries, 0, SILVER_END + reach)
         if c:
             axes.append((ROLE_FLAVOR, AXIS_COUNTRY, c[0]))
             adj = _country_adjective(c[0])
@@ -160,7 +163,7 @@ def _build_blend_row(
                 title_parts.insert(0, adj)
     else:
         other = [gx for gx in genres if gx[0] != g[0]]
-        sg = _pick(other, 0, SILVER_END) if other else None
+        sg = _pick(other, 0, SILVER_END + reach) if other else None
         if sg:
             axes.append((ROLE_FLAVOR, AXIS_GENRE, sg[0]))
             title_parts.append(_genre_name(sg[0], content_type))
@@ -176,24 +179,25 @@ def _build_rising_row(
     content_type: str,
     used_genres: set[int],
     used_keywords: set[int],
+    reach: int = 0,
 ) -> tuple[list[tuple[str, str, Any]], str] | None:
     axes: list[tuple[str, str, Any]] = []
     title_parts: list[str] = []
 
-    k = _pick(keywords, SILVER_START, SILVER_END, used_keywords)
+    k = _pick(keywords, SILVER_START, SILVER_END + reach, used_keywords)
     if not k or k[0] not in keyword_names:
         return None
     axes.append((ROLE_ANCHOR, AXIS_KEYWORD, k[0]))
     title_parts.append(_keyword_display(keyword_names[k[0]]))
     used_keywords.add(k[0])
 
-    g = _pick(genres, SILVER_START, SILVER_END, used_genres)
+    g = _pick(genres, SILVER_START, SILVER_END + reach, used_genres)
     if g:
         axes.append((ROLE_FLAVOR, AXIS_GENRE, g[0]))
         title_parts.append(_genre_name(g[0], content_type))
 
     if countries:
-        c = _pick(countries, 0, SILVER_END)
+        c = _pick(countries, 0, SILVER_END + reach)
         if c:
             axes.append((ROLE_FALLBACK, AXIS_COUNTRY, c[0]))
 
@@ -207,25 +211,29 @@ def build_fallback_rows(
     runtimes: list[tuple[str, float]],
     keyword_names: dict[int, str],
     content_type: str,
+    count: int = 3,
 ) -> list[tuple[list[tuple[str, str, Any]], str]]:
-    """Build up to 3 rows as (axes, fallback_title) tuples."""
+    """Build up to `count` rows as (axes, fallback_title) tuples, three to a round.
+    Each later round reaches further down the profile's genres and keywords."""
     rows: list[tuple[list[tuple[str, str, Any]], str]] = []
+    seen: set[str] = set()
     used_genres: set[int] = set()
     used_keywords: set[int] = set()
 
-    r1 = _build_core_row(genres, keywords, runtimes, keyword_names, content_type, used_genres, used_keywords)
-    if r1:
-        rows.append(r1)
+    for reach in range(0, count, 3):
+        round_rows = (
+            _build_core_row(genres, keywords, runtimes, keyword_names, content_type, used_genres, used_keywords, reach),
+            _build_blend_row(genres, countries, content_type, used_genres, reach),
+            _build_rising_row(
+                genres, keywords, countries, keyword_names, content_type, used_genres, used_keywords, reach
+            ),
+        )
+        for row in round_rows:
+            if row and build_row_id(row[0]) not in seen:
+                seen.add(build_row_id(row[0]))
+                rows.append(row)
 
-    r2 = _build_blend_row(genres, countries, content_type, used_genres)
-    if r2:
-        rows.append(r2)
-
-    r3 = _build_rising_row(genres, keywords, countries, keyword_names, content_type, used_genres, used_keywords)
-    if r3:
-        rows.append(r3)
-
-    return rows[:3]
+    return rows[:count]
 
 
 class RowGeneratorService:
@@ -239,31 +247,33 @@ class RowGeneratorService:
         profile: TasteProfile,
         content_type: str = "movie",
         llm_config: LLMConfig | None = None,
+        count: int = 3,
     ) -> list[RowDefinition]:
-        """Generate up to 3 personalized catalog rows.
+        """Generate up to `count` personalized catalog rows.
 
         Without an LLM config (user supplied no key) the rows come purely from
         the template fallback — no LLM calls are made at all.
         """
-        genres = profile.get_top_genres(limit=5)
-        keywords = profile.get_top_keywords(limit=10)
+        genres = profile.get_top_genres(limit=max(5, count + 2))
+        keywords = profile.get_top_keywords(limit=max(10, 3 * count))
         countries = profile.get_top_countries(limit=2)
         runtimes = sorted(profile.runtime_bucket_scores.items(), key=lambda x: x[1], reverse=True)
 
         keyword_names = await self._resolve_keyword_names([kid for kid, _ in keywords])
+        keywords = [(kid, score) for kid, score in keywords if not is_meta_keyword(keyword_names.get(kid))]
 
         if llm_config:
             try:
                 llm_rows = await self._generate_with_llm(
                     profile, genres, keywords, keyword_names, content_type, llm_config
                 )
-                if llm_rows:
+                if llm_rows and len(llm_rows) >= count:
                     logger.info(f"Generated {len(llm_rows)} LLM-driven rows for {content_type}")
-                    return llm_rows
+                    return llm_rows[:count]
             except Exception as e:
                 logger.warning(f"LLM row generation failed, using fallback: {e}")
 
-        rows = build_fallback_rows(genres, keywords, countries, runtimes, keyword_names, content_type)
+        rows = build_fallback_rows(genres, keywords, countries, runtimes, keyword_names, content_type, count)
         titled = await self._generate_titles(rows, llm_config)
         logger.info(f"Generated {len(titled)} rows (fallback) for {content_type}")
         return titled

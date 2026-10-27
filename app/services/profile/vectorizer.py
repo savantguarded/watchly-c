@@ -13,6 +13,7 @@ from app.services.profile.constants import (
     RUNTIME_BUCKET_SHORT_MAX_SERIES,
 )
 from app.services.tmdb.service import TMDBService
+from app.watchly_c.meta_keywords import is_meta_keyword
 
 
 class ProfileVectorizer:
@@ -47,7 +48,7 @@ class ProfileVectorizer:
         else:
             keywords = keywords_dict
 
-        keywords = [k.get("id") for k in keywords if k.get("id")]
+        keywords = [k.get("id") for k in keywords if k.get("id") and not is_meta_keyword(k.get("name"))]
 
         # Top 3 cast only — main + two critical supporting. Tracking deeper into
         # the credit list pollutes "favorite cast" with bit-part actors who

@@ -11,6 +11,13 @@ from app.services.poster_ratings.factory import PosterProvider
 # below the pool so a home screen is never mostly "Because you watched" rows.
 # Watchly C: 4, since mixed rows count in total rather than per type.
 MAX_ITEM_ROWS = 4
+# Rows a catalog can emit per content type, as far as the configure page lets the user go.
+# Watchly C: genre & keyword and seasonal & contextual rows are countable too.
+THEME_DEFAULT_ROWS = 3
+# Accounts saved before these catalogs were countable carry rows=1, the field's default, with
+# the rows they had been getting (3). Treating 1 as unset keeps those; the page offers 2 and up.
+ROW_MINIMUMS = {"watchly.theme": 2, "watchly.ctx": 2}
+ROW_LIMITS = {"watchly.item": MAX_ITEM_ROWS, "watchly.theme": 6, "watchly.ctx": 6}
 
 
 class CatalogConfig(BaseModel):
@@ -22,7 +29,7 @@ class CatalogConfig(BaseModel):
     display_at_home: bool = Field(default=True, description="Display this catalog on home page")
     shuffle: bool = Field(default=False, description="Randomize order of items in this catalog")
     rows: int = Field(
-        default=1, ge=1, le=MAX_ITEM_ROWS, description="Rows per content type; only watchly.item emits more than one"
+        default=1, ge=1, description="Rows; only watchly.item, watchly.theme and watchly.ctx emit several"
     )
 
     @field_validator("name", mode="before")
@@ -35,6 +42,19 @@ class CatalogConfig(BaseModel):
             stripped = v.strip()
             return stripped or None
         return v
+
+    @model_validator(mode="before")
+    @classmethod
+    def _unset_rows_take_the_default(cls, data):
+        if isinstance(data, dict) and data.get("id") in ROW_MINIMUMS and data.get("rows", 1) == 1:
+            return {**data, "rows": THEME_DEFAULT_ROWS}
+        return data
+
+    @model_validator(mode="after")
+    def _rows_within_limit(self):
+        if self.rows > ROW_LIMITS.get(self.id, MAX_ITEM_ROWS):
+            raise ValueError(f"rows for {self.id} can be at most {ROW_LIMITS.get(self.id, MAX_ITEM_ROWS)}")
+        return self
 
 
 class PosterRatingConfig(BaseModel):
@@ -168,8 +188,7 @@ CATALOG_DESCRIPTIONS = {
     ),
     "watchly.theme": (
         "Dynamic catalogs based on your favorite genres, keyword, countries and many more.Just like netflix."
-        " Example: American Horror, Based on Novel or Book etc. This will show atmost 4 catalogs each for"
-        " movies and series. This number can vary based on your history."
+        " Example: American Horror, Based on Novel or Book etc. This number can vary based on your history."
     ),
 }
 
@@ -188,11 +207,11 @@ if app_config.MIXED_ITEM_ROWS:
 
 if app_config.CONTEXT_ROWS:
     CATALOG_DESCRIPTIONS["watchly.ctx"] = (
-        "Seasonal and contextual rows, three per type, new each day and each given its turn. One follows the"
-        " time of year (Spooky Season, Holiday Season, Valentine's, Awards Season, Summer Blockbusters, African"
-        " Stories), one the moment (Friday Night, Sunday Slow, Rainy Day, On This Day), and one rotates through"
-        " Late Night Watch, Hidden Gems, a Decade Time Machine, Short Binges and a row from the people behind"
-        " something you loved. A slot with nothing that fits the day takes the next one in the rotation."
+        "Seasonal and contextual rows, new each day and each given its turn. Rows is the number per type."
+        " Movies always lead with On This Day. The rest cycle between the time of year (Spooky Season, Holiday"
+        " Season, Valentine's, Awards Season, Summer Blockbusters, African Stories), the moment (Friday Night,"
+        " Sunday Slow, Rainy Day) and an evergreen pick (Late Night Watch, Hidden Gems, a Decade Time Machine,"
+        " Short Binges, the people behind something you loved)."
     )
 
 
@@ -227,6 +246,7 @@ def get_default_settings() -> UserSettings:
                 enabled_series=True,
                 display_at_home=True,
                 shuffle=False,
+                rows=THEME_DEFAULT_ROWS if app_config.WIDE_THEME_ROWS else 1,
             ),
             *(
                 [
@@ -238,6 +258,7 @@ def get_default_settings() -> UserSettings:
                         enabled_series=True,
                         display_at_home=True,
                         shuffle=False,
+                        rows=3,
                     )
                 ]
                 if app_config.CONTEXT_ROWS
@@ -252,23 +273,29 @@ def get_default_settings() -> UserSettings:
                 display_at_home=True,
                 shuffle=False,
             ),
-            CatalogConfig(
-                id="watchly.all.loved",
-                name="Based on what you loved",
-                enabled=False,
-                enabled_movie=True,
-                enabled_series=True,
-                display_at_home=True,
-                shuffle=False,
-            ),
-            CatalogConfig(
-                id="watchly.liked.all",
-                name="Based on what you liked",
-                enabled=False,
-                enabled_movie=True,
-                enabled_series=True,
-                display_at_home=True,
-                shuffle=False,
+            *(
+                []
+                if app_config.RETIRE_ALL_BASED
+                else [
+                    CatalogConfig(
+                        id="watchly.all.loved",
+                        name="Based on what you loved",
+                        enabled=False,
+                        enabled_movie=True,
+                        enabled_series=True,
+                        display_at_home=True,
+                        shuffle=False,
+                    ),
+                    CatalogConfig(
+                        id="watchly.liked.all",
+                        name="Based on what you liked",
+                        enabled=False,
+                        enabled_movie=True,
+                        enabled_series=True,
+                        display_at_home=True,
+                        shuffle=False,
+                    ),
+                ]
             ),
             CatalogConfig(
                 id="watchly.rewatch",

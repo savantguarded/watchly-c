@@ -7,9 +7,8 @@ from loguru import logger
 
 from app.core.config import settings
 from app.core.constants import CLAIMS_KEY
-from app.core.settings import MAX_ITEM_ROWS
+from app.core.settings import MAX_ITEM_ROWS, ROW_LIMITS
 from app.services.redis_service import redis_service
-from app.watchly_c.row_slots import CONTEXT_SLOTS, THEME_SLOTS
 
 TYPES = ("movie", "series")
 BASE_ROWS = ("watchly.rec", "watchly.creators", "watchly.all.loved", "watchly.liked.all")
@@ -22,8 +21,8 @@ SLOT_ID = re.compile(r"^watchly\.(item\.mix|item|ctx|theme)\.(\d+)$")
 _ROW_IDS = (
     [f"watchly.item.mix.{n}" for n in range(1, MAX_ITEM_ROWS + 1)]
     + [f"watchly.item.{n}" for n in range(1, MAX_ITEM_ROWS + 1)]
-    + [f"watchly.ctx.{n}" for n in range(1, CONTEXT_SLOTS + 1)]
-    + [f"watchly.theme.{n}" for n in range(1, THEME_SLOTS + 1)]
+    + [f"watchly.ctx.{n}" for n in range(1, ROW_LIMITS["watchly.ctx"] + 1)]
+    + [f"watchly.theme.{n}" for n in range(1, ROW_LIMITS["watchly.theme"] + 1)]
     + list(BASE_ROWS)
 )
 

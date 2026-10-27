@@ -177,6 +177,7 @@ class DynamicCatalogService:
                 display_at_home,
                 token,
                 row_slots,
+                theme_cfg.rows if app_settings.WIDE_THEME_ROWS else THEME_SLOTS,
             )
             catalogs.extend(theme_catalogs)
 
@@ -218,24 +219,25 @@ class DynamicCatalogService:
                 False,
             )
         )
-        catalogs.extend(
-            get_catalogs_from_config(
-                user_settings,
-                "watchly.all.loved",
-                "Based on what you loved",
-                True,
-                True,
+        if not app_settings.RETIRE_ALL_BASED:
+            catalogs.extend(
+                get_catalogs_from_config(
+                    user_settings,
+                    "watchly.all.loved",
+                    "Based on what you loved",
+                    True,
+                    True,
+                )
             )
-        )
-        catalogs.extend(
-            get_catalogs_from_config(
-                user_settings,
-                "watchly.liked.all",
-                "Based on what you liked",
-                True,
-                True,
+            catalogs.extend(
+                get_catalogs_from_config(
+                    user_settings,
+                    "watchly.liked.all",
+                    "Based on what you liked",
+                    True,
+                    True,
+                )
             )
-        )
         catalogs.extend(get_catalogs_from_config(user_settings, "watchly.rewatch", "Watch it again", True, True))
 
         if token:
@@ -255,14 +257,19 @@ class DynamicCatalogService:
         display_at_home: bool,
         token: str | None,
         row_slots: dict[str, dict[str, str]],
+        row_count: int,
     ) -> list[dict[str, Any]]:
         llm_config = resolve_llm_config(user_settings)
 
         tasks = []
         if enabled_movie:
-            tasks.append(self._build_theme_rows_for_type(library_items, "movie", llm_config, token, user_settings))
+            tasks.append(
+                self._build_theme_rows_for_type(library_items, "movie", llm_config, token, user_settings, row_count)
+            )
         if enabled_series:
-            tasks.append(self._build_theme_rows_for_type(library_items, "series", llm_config, token, user_settings))
+            tasks.append(
+                self._build_theme_rows_for_type(library_items, "series", llm_config, token, user_settings, row_count)
+            )
 
         results = await asyncio.gather(*tasks, return_exceptions=True)
         catalogs: list[dict[str, Any]] = []
@@ -288,7 +295,7 @@ class DynamicCatalogService:
                 )
 
         if app_settings.FIXED_ROW_SLOTS:
-            slots = {t: THEME_SLOTS for t, on in (("movie", enabled_movie), ("series", enabled_series)) if on}
+            slots = {t: row_count for t, on in (("movie", enabled_movie), ("series", enabled_series)) if on}
             catalogs = fill_slots(catalogs, "watchly.theme.", slots, "Genre & keyword picks", extra)
         return catalogs
 
@@ -299,6 +306,7 @@ class DynamicCatalogService:
         llm_config: LLMConfig | None,
         token: str | None,
         user_settings: UserSettings | None = None,
+        row_count: int = THEME_SLOTS,
     ) -> tuple[str, list[Any]]:
         logger.info(f"[Theme Catalogs] Building rows for {media_type}")
 
@@ -321,7 +329,7 @@ class DynamicCatalogService:
             logger.warning(f"Failed to build profile for {media_type}")
             return media_type, []
 
-        rows = await self.row_generator.generate_rows(profile, media_type, llm_config=llm_config)
+        rows = await self.row_generator.generate_rows(profile, media_type, llm_config=llm_config, count=row_count)
         return media_type, rows
 
     # --- Item-based rows ---

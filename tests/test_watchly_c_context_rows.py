@@ -24,8 +24,8 @@ def at(day: str, rain: bool = False, people: bool = True) -> Today:
     return Today(date.fromisoformat(day), rain, people)
 
 
-def keys(content_type: str, today_: Today, shown: dict[str, str] | None = None) -> list[str]:
-    return [s.key for s in choose_specs(content_type, today_, shown or {}, random.Random(1))]
+def keys(content_type: str, today_: Today, shown: dict[str, str] | None = None, count: int = 3) -> list[str]:
+    return [s.key for s in choose_specs(content_type, today_, shown or {}, random.Random(1), count)]
 
 
 def test_season_rows_only_appear_inside_their_window():
@@ -67,7 +67,7 @@ def test_the_rotating_slot_cycles_through_every_evergreen_row():
     day = date(2026, 4, 14)
     for n in range(10):
         today_ = Today(day + timedelta(days=n), False, True)
-        for spec in choose_specs("movie", today_, shown, random.Random(n)):
+        for spec in choose_specs("movie", today_, shown, random.Random(n), 3):
             shown[spec.key] = today_.day.isoformat()
             seen.add(spec.key)
     assert seen >= {s.key for s in SPECS if s.kind == "evergreen" and "movie" in s.types}
@@ -116,7 +116,7 @@ def build(config=None, library=None):
     rows = asyncio.run(
         context_catalogs(
             TOKEN,
-            config or CatalogConfig(id="watchly.ctx", name="Seasonal"),
+            config or CatalogConfig(id="watchly.ctx", name="Seasonal", rows=3),
             library or LibraryCollection(watched=[movie("tt1")], source="nuvio"),
             lambda i: None,
             1990,
@@ -132,7 +132,8 @@ def test_each_type_gets_three_numbered_slots_with_a_definition_each(world):
     assert sorted(r["id"] for r in rows if r["type"] == "movie") == [f"{CONTEXT_PREFIX}{n}" for n in (1, 2, 3)]
     assert set(slots) == {"movie", "series"}
     assert set(slots["movie"]) == {"ctx.1", "ctx.2", "ctx.3"}
-    assert slots["movie"]["ctx.1"] in {"spooky", "spooky_gentle", "african"}
+    assert slots["movie"]["ctx.1"] == "on_this_day"
+    assert slots["series"]["ctx.1"] in {"spooky", "spooky_gentle", "african"}
 
 
 def test_a_days_picks_are_stable_across_builds(world):
@@ -144,7 +145,7 @@ def test_a_days_picks_are_stable_across_builds(world):
 
 def test_a_disabled_catalog_or_type_gives_no_rows(world):
     assert build(CatalogConfig(id="watchly.ctx", enabled=False))[0] == []
-    rows, _ = build(CatalogConfig(id="watchly.ctx", enabled_series=False))
+    rows, _ = build(CatalogConfig(id="watchly.ctx", enabled_series=False, rows=3))
     assert {r["type"] for r in rows} == {"movie"}
 
 
@@ -254,3 +255,39 @@ def test_hidden_gems_leave_out_popular_and_recent_titles(monkeypatch):
 
     assert [m["_tmdb_id"] for m in out] == [8]
     assert all(c["first_air_date.lte"] <= "2024-10-27" for c in tmdb.calls)
+
+
+def test_movies_always_lead_with_on_this_day_even_when_it_rains():
+    for rain in (False, True):
+        for count in (1, 3, 6):
+            assert keys("movie", at("2026-10-23", rain=rain), count=count)[0] == "on_this_day"
+    assert keys("movie", at("2026-10-23", rain=True), count=1) == ["on_this_day"]
+
+
+def test_any_row_count_gives_that_many_distinct_rows():
+    for content_type in ("movie", "series"):
+        for count in range(1, 7):
+            picked = keys(content_type, at("2026-10-23", rain=True), count=count)
+            assert len(picked) == count == len(set(picked))
+
+
+def test_changing_the_row_count_rebuilds_the_days_picks(world):
+    _, three = build(CatalogConfig(id="watchly.ctx", rows=3))
+    rows, five = build(CatalogConfig(id="watchly.ctx", rows=5))
+
+    assert len(five["movie"]) == 5 and len(three["movie"]) == 3
+    assert sum(r["type"] == "movie" for r in rows) == 5
+
+
+def test_a_days_picks_from_before_the_rules_changed_are_chosen_again(world):
+    build()
+    import json
+
+    stale = json.loads(next(iter(world.data.values())))
+    stale["v"] = 1
+    stale["picks"]["series"][1] = {"definition": "on_this_day", "name": "On This Day, 27 Oct"}
+    world.data[next(iter(world.data))] = json.dumps(stale)
+
+    _, slots = build()
+
+    assert "on_this_day" not in slots["series"].values()

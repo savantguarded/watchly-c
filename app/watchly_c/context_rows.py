@@ -1,4 +1,5 @@
 import asyncio
+import itertools
 import json
 import random
 from collections.abc import Callable
@@ -25,13 +26,15 @@ from app.services.recommendation.utils import content_type_to_mtype, resolve_tmd
 from app.services.redis_service import redis_service
 from app.services.tmdb.service import TMDBService
 from app.watchly_c.relevance import BASE_FLOOR, MIN_VOTES, clears_floor, quality, row_size
-from app.watchly_c.row_slots import CONTEXT_SLOTS, fill_slots
+from app.watchly_c.row_slots import fill_slots
 from app.watchly_c.seeds import choose_seeds, today
 from app.watchly_c.weather import rains_today
 
 CONTEXT_CONFIG_ID = "watchly.ctx"
 CONTEXT_PREFIX = "watchly.ctx."
 LOG_TTL_SECONDS = 45 * 86400
+# Bumped when the rules for choosing a day's rows change, so a day already chosen is chosen again.
+LOG_VERSION = 2
 # Widening levels: more pages and a lower vote floor each time, only while a row is short.
 LEVELS = 3
 ANNIVERSARIES = (5, 10, 15, 20, 25, 30, 35, 40)
@@ -111,6 +114,8 @@ class Spec:
     window: tuple[tuple[int, int], tuple[int, int]] | None = None
     floor: float = BASE_FLOOR
     min_votes: int = MIN_VOTES
+    # Always the first row of a type that can show it.
+    pinned: bool = False
     max_popularity: float | None = None
 
 
@@ -275,7 +280,7 @@ SPECS: tuple[Spec, ...] = (
             "series": (Look(genres="35|18", votes=500, rating=7.3),),
         },
     ),
-    Spec("on_this_day", "moment", "On This Day, {day} {month}", types=("movie",), build=_on_this_day),
+    Spec("on_this_day", "moment", "On This Day, {day} {month}", types=("movie",), build=_on_this_day, pinned=True),
     Spec(
         "late_night",
         "evergreen",
@@ -322,23 +327,24 @@ def is_eligible(spec: Spec, today_: Today) -> bool:
     return True
 
 
-def choose_specs(content_type: str, today_: Today, shown: dict[str, str], rng: random.Random) -> list[Spec]:
-    """One spec per slot, in slot order. Within a kind the one shown longest ago goes
-    first, so every row that fits the day gets its turn. A slot with nothing that fits
-    (no season, a dry weekday) is filled from the rotating kind instead."""
-    chosen: list[Spec] = []
-    for kind in SLOT_KINDS:
-        available = [
-            s
-            for s in SPECS
-            if content_type in s.types and is_eligible(s, today_) and s not in chosen and s.kind == kind
-        ] or [
-            s
-            for s in SPECS
-            if content_type in s.types and is_eligible(s, today_) and s not in chosen and s.kind == "evergreen"
-        ]
-        if available:
-            chosen.append(min(available, key=lambda s: (shown.get(s.key, ""), rng.random())))
+def choose_specs(content_type: str, today_: Today, shown: dict[str, str], rng: random.Random, count: int) -> list[Spec]:
+    """`count` specs for a type, in slot order. Pinned rows come first. The rest cycle
+    through season, moment and evergreen kinds, taking the spec shown longest ago in
+    each, so every row that fits the day gets its turn. A kind with nothing that fits
+    (no season, a dry weekday) hands its place to the evergreen rows."""
+    usable = [s for s in SPECS if content_type in s.types and is_eligible(s, today_)]
+    chosen = [s for s in usable if s.pinned][:count]
+    misses = 0
+    kinds = itertools.cycle(SLOT_KINDS)
+    while len(chosen) < count and misses < len(SLOT_KINDS):
+        kind = next(kinds)
+        free = [s for s in usable if s not in chosen]
+        available = [s for s in free if s.kind == kind] or [s for s in free if s.kind == "evergreen"]
+        if not available:
+            misses += 1
+            continue
+        misses = 0
+        chosen.append(min(available, key=lambda s: (shown.get(s.key, ""), rng.random())))
     return chosen
 
 
@@ -369,10 +375,10 @@ async def context_catalogs(
     day = today()
     raw = await redis_service.get(CONTEXT_LOG_KEY.format(token=token)) if token else None
     log: dict[str, Any] = json.loads(raw) if raw else {}
-    if log.get("day") != day.isoformat():
-        log = {"day": day.isoformat(), "picks": {}, "shown": log.get("shown", {})}
+    if log.get("day") != day.isoformat() or log.get("v") != LOG_VERSION:
+        log = {"v": LOG_VERSION, "day": day.isoformat(), "picks": {}, "counts": {}, "shown": log.get("shown", {})}
 
-    missing = [t for t in types if t not in log["picks"]]
+    missing = [t for t in types if t not in log["picks"] or log["counts"].get(t) != config.rows]
     if missing:
         movie_pool = [i for i in library.loved + library.liked + library.watched if i.type == "movie"]
         today_ = Today(day, await rains_today(day), bool(movie_pool))
@@ -380,10 +386,11 @@ async def context_catalogs(
             shown = log["shown"].setdefault(content_type, {})
             rng = random.Random(f"{token}:{day.isoformat()}:{content_type}")
             picks = []
-            for spec in choose_specs(content_type, today_, shown, rng):
+            for spec in choose_specs(content_type, today_, shown, rng, config.rows):
                 shown[spec.key] = day.isoformat()
                 picks.append(await _pick(token, spec, content_type, day, movie_pool, last_watched, year_min))
             log["picks"][content_type] = picks
+            log["counts"][content_type] = config.rows
         if token:
             await redis_service.set(CONTEXT_LOG_KEY.format(token=token), json.dumps(log), LOG_TTL_SECONDS)
 
@@ -396,7 +403,7 @@ async def context_catalogs(
                 {"type": content_type, "id": f"{CONTEXT_PREFIX}{slot}", "name": pick["name"], "extra": extra}
             )
     return fill_slots(
-        catalogs, CONTEXT_PREFIX, {t: CONTEXT_SLOTS for t in types}, config.name or "Seasonal & contextual", extra
+        catalogs, CONTEXT_PREFIX, {t: config.rows for t in types}, config.name or "Seasonal & contextual", extra
     )
 
 

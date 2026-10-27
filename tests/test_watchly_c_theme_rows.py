@@ -78,3 +78,16 @@ def test_top_up_never_repeats_a_stock_pick(monkeypatch):
     out = serve(monkeypatch, [stock_pick(1000)], tmdb, limit=5)
 
     assert [m["_tmdb_id"] for m in out].count(1000) == 1
+
+
+def test_widening_keywords_skip_credit_tags(monkeypatch):
+    from app.models.profile import TasteProfile
+
+    class Names(FakeTMDB):
+        async def get_keyword_details(self, keyword_id):
+            return {"name": {1: "duringcreditsstinger", 2: "heist"}.get(keyword_id, "other")}
+
+    service = WideThemeService(Names(depth=0), get_default_settings())
+    profile = TasteProfile(keyword_scores={1: 9.0, 2: 8.0, 3: 7.0})
+
+    assert asyncio.run(service._favourite_keywords(profile)) == [2, 3]

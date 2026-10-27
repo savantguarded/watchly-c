@@ -8,7 +8,7 @@ from app.watchly_c.row_slots import THEME_SLOTS, fill_slots
 
 
 def theme_catalogs(monkeypatch, rows_by_type: dict[str, list[RowDefinition] | Exception]) -> tuple[list[dict], dict]:
-    async def fake_rows(self, library, media_type, llm_config, token, user_settings=None):
+    async def fake_rows(self, library, media_type, llm_config, token, user_settings=None, row_count=3):
         result = rows_by_type[media_type]
         if isinstance(result, Exception):
             raise result
@@ -18,7 +18,7 @@ def theme_catalogs(monkeypatch, rows_by_type: dict[str, list[RowDefinition] | Ex
     slots: dict[str, dict[str, str]] = {}
     catalogs = asyncio.run(
         DynamicCatalogService()._build_theme_catalogs(
-            LibraryCollection(), get_default_settings(), True, True, True, None, slots
+            LibraryCollection(), get_default_settings(), True, True, True, None, slots, 3
         )
     )
     return catalogs, slots
@@ -39,7 +39,7 @@ def test_a_switched_off_type_gets_no_slots(monkeypatch):
     monkeypatch.setattr(DynamicCatalogService, "_build_theme_rows_for_type", None)
     catalogs = asyncio.run(
         DynamicCatalogService()._build_theme_catalogs(
-            LibraryCollection(), get_default_settings(), False, False, True, None, {}
+            LibraryCollection(), get_default_settings(), False, False, True, None, {}, 3
         )
     )
     assert catalogs == []

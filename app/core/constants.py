@@ -33,8 +33,9 @@ MANIFEST_KEY: str = "watchly:manifest:{version}:{token}"
 # Watchly C: the item-row seeds picked per day, so a day's pick is stable and
 # recent seeds aren't repeated.
 SEED_LOG_KEY: str = "watchly:c:seeds:{token}"
-# Watchly C: one daily refresh run per day, however often the cron fires.
-DAILY_REFRESH_RUN_KEY: str = "watchly:c:daily_refresh:{day}"
+# Watchly C: one daily refresh run per day, however often the cron fires. Held briefly
+# while a run is in flight and for the rest of the day only once it finished cleanly.
+DAILY_REFRESH_RUN_KEY: str = "watchly:c:daily_refresh:run:{day}"
 # Watchly C: the titles one row is showing, so rows built after it can leave them out.
 CLAIMS_KEY: str = "watchly:c:claims:{token}:{content_type}:{catalog_id}"
 # Watchly C: which seasonal/contextual rows a token was given today, and when each last ran.

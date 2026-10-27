@@ -16,11 +16,18 @@ from app.watchly_c.shuffle import timed_shuffle
 class FakeRedis:
     def __init__(self, tokens=()):
         self.data: dict[str, str] = {f"watchly:token:{t}": "{}" for t in tokens}
+        self.ttls: dict[str, int | None] = {}
 
     async def set_nx(self, key, value, ttl=None):
         if key in self.data:
             return False
         self.data[key] = value
+        self.ttls[key] = ttl
+        return True
+
+    async def set(self, key, value, ttl=None):
+        self.data[key] = value
+        self.ttls[key] = ttl
         return True
 
     async def get_client(self):
@@ -84,6 +91,19 @@ def test_it_runs_once_a_day_however_often_it_is_called(setup):
 
     assert client.get("/watchly-c/daily-refresh").json()["status"] == "already-ran"
     assert calls == []
+
+
+def test_only_a_clean_run_holds_the_day_and_an_unfinished_one_frees_itself_soon(setup, monkeypatch):
+    redis, _ = setup
+    run_key = "watchly:c:daily_refresh:run:2026-10-22"
+    monkeypatch.setattr(daily_refresh, "TIME_BUDGET_SECONDS", -1)
+    TestClient(app).get("/watchly-c/daily-refresh")
+    assert redis.ttls[run_key] == daily_refresh.RUN_LOCK_TTL_SECONDS
+
+    monkeypatch.setattr(daily_refresh, "TIME_BUDGET_SECONDS", 200)
+    redis.data.pop(run_key)
+    TestClient(app).get("/watchly-c/daily-refresh")
+    assert redis.ttls[run_key] == daily_refresh.RUN_DONE_TTL_SECONDS
 
 
 def test_the_cron_secret_is_enforced_once_set(setup, monkeypatch):

@@ -23,7 +23,8 @@ router = APIRouter(tags=["watchly-c"])
 # Vercel stops a function at 300 s; no new account is started past this, so the one
 # in flight has room to finish. Accounts left over refresh lazily on their next open.
 TIME_BUDGET_SECONDS = 200
-RUN_KEY_TTL_SECONDS = 20 * 3600
+RUN_LOCK_TTL_SECONDS = 15 * 60
+RUN_DONE_TTL_SECONDS = 20 * 3600
 
 
 @router.get("/watchly-c/daily-refresh", summary="Rebuild every account's library, seeds and rows for the day")
@@ -31,16 +32,21 @@ async def daily_refresh(authorization: str | None = Header(default=None)) -> dic
     """Called by the Vercel cron in vercel.json.
 
     Without CRON_SECRET anyone can call this, and the run key is what keeps that
-    harmless: one run per day, whoever asks first.
+    harmless: one run per day, whoever asks first. A run that crashed or left accounts
+    unrefreshed only holds the key for RUN_LOCK_TTL_SECONDS, so it can be run again.
     """
     if settings.CRON_SECRET and not hmac.compare_digest(authorization or "", f"Bearer {settings.CRON_SECRET}"):
         raise HTTPException(status_code=401, detail="Unauthorized")
 
     day = today().isoformat()
-    if not await redis_service.set_nx(DAILY_REFRESH_RUN_KEY.format(day=day), "1", RUN_KEY_TTL_SECONDS):
+    run_key = DAILY_REFRESH_RUN_KEY.format(day=day)
+    if not await redis_service.set_nx(run_key, "1", RUN_LOCK_TTL_SECONDS):
         return {"day": day, "status": "already-ran"}
 
-    return {"day": day, "status": "done", **await refresh_all_accounts()}
+    result = await refresh_all_accounts()
+    if not result["failed"] and not result["deferred"]:
+        await redis_service.set(run_key, "1", RUN_DONE_TTL_SECONDS)
+    return {"day": day, "status": "done", **result}
 
 
 async def _account_tokens() -> list[str]:
@@ -68,6 +74,9 @@ async def refresh_all_accounts() -> dict[str, int]:
         except Exception as e:
             logger.warning(f"[{redact_token(token)}] Daily refresh failed: {type(e).__name__}")
             ok = False
+        else:
+            if not ok:
+                logger.warning(f"[{redact_token(token)}] Daily refresh did not complete")
         refreshed += ok
         failed += not ok
 

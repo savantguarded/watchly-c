@@ -144,6 +144,7 @@ async def configure_page(request: Request, _token: str | None = None):
         default_catalogs=default_catalogs,
         max_rows=ROW_LIMITS,
         min_rows=ROW_MINIMUMS,
+        show_sorting_order=not settings.MIXED_BASE_ROWS,
         current_year=get_current_year(),
         year_range_defaults=year_range_defaults,
         stored_secret_sentinel=STORED_SECRET_SENTINEL,

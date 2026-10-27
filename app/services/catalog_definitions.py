@@ -13,6 +13,7 @@ from app.services.profile.service import ProfileService
 from app.services.row_generator import RowGeneratorService
 from app.services.tmdb.service import get_tmdb_service
 from app.services.user_cache import user_cache
+from app.watchly_c.base_rows import mixed_base_catalog
 from app.watchly_c.context_rows import CONTEXT_CONFIG_ID, context_catalogs
 from app.watchly_c.mixed_rows import mixed_item_rows
 from app.watchly_c.row_slots import THEME_SLOTS, fill_slots
@@ -210,16 +211,23 @@ class DynamicCatalogService:
                 )
             )
 
-        catalogs.extend(get_catalogs_from_config(user_settings, "watchly.rec", "Top Picks for You", True, True))
-        catalogs.extend(
-            get_catalogs_from_config(
-                user_settings,
-                "watchly.creators",
-                "From your favourite Creators",
-                False,
-                False,
+        if app_settings.MIXED_BASE_ROWS:
+            for catalog_id, name in (
+                ("watchly.rec", "Top Picks for You"),
+                ("watchly.creators", "From your favourite Creators"),
+            ):
+                catalogs.extend(mixed_base_catalog(user_settings, catalog_id, name))
+        else:
+            catalogs.extend(get_catalogs_from_config(user_settings, "watchly.rec", "Top Picks for You", True, True))
+            catalogs.extend(
+                get_catalogs_from_config(
+                    user_settings,
+                    "watchly.creators",
+                    "From your favourite Creators",
+                    False,
+                    False,
+                )
             )
-        )
         if not app_settings.RETIRE_ALL_BASED:
             catalogs.extend(
                 get_catalogs_from_config(
@@ -239,7 +247,10 @@ class DynamicCatalogService:
                     True,
                 )
             )
-        catalogs.extend(get_catalogs_from_config(user_settings, "watchly.rewatch", "Watch it again", True, True))
+        if app_settings.MIXED_BASE_ROWS:
+            catalogs.extend(mixed_base_catalog(user_settings, "watchly.rewatch", "Watch it again"))
+        else:
+            catalogs.extend(get_catalogs_from_config(user_settings, "watchly.rewatch", "Watch it again", True, True))
 
         if token:
             for content_type in ("movie", "series"):

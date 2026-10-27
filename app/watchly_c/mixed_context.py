@@ -41,6 +41,22 @@ async def other_type_state(
     return None, watched, library.all_imdb_ids()
 
 
+async def row_states(
+    token: str,
+    library: LibraryCollection,
+    config_id: str,
+    content_type: str,
+    own: TypeState,
+    user_settings: UserSettings,
+) -> tuple[list[str], dict[str, TypeState]]:
+    """The types a mixed row draws on, the requested type first, and each one's state."""
+    types = enabled_types(user_settings, config_id)
+    states = {content_type: own}
+    if OTHER_TYPE[content_type] in types:
+        states[OTHER_TYPE[content_type]] = await other_type_state(token, library, content_type, user_settings)
+    return [content_type] + [t for t in types if t != content_type], states
+
+
 async def blend(
     types: list[str],
     states: dict[str, TypeState],

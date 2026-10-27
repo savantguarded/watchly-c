@@ -29,8 +29,9 @@ from app.services.user_cache import user_cache
 from app.services.warmup import warmup_service
 from app.watchly_c.context_rows import ContextRowService
 from app.watchly_c.dedupe import claimed_by_earlier_rows, record_claims
-from app.watchly_c.mixed_context import enabled_types, other_type_state
-from app.watchly_c.mixed_rows import MIXED_ITEM_PREFIX, OTHER_TYPE, mixed_recommendations
+from app.watchly_c.base_rows import MIXED_BASE_IDS
+from app.watchly_c.mixed_context import TypeState, blend, row_states
+from app.watchly_c.mixed_rows import MIXED_ITEM_PREFIX, mixed_recommendations
 from app.watchly_c.relevance import RankedItemService
 from app.watchly_c.theme_rows import MIXED_THEME, WideThemeService, mixed_theme_recommendations
 
@@ -384,18 +385,41 @@ class CatalogService:
         user_settings: UserSettings | None = None,
         claimed: dict[str, set[int]] | None = None,
         token: str | None = None,
+        mix: bool = True,
     ) -> list[dict[str, Any]]:
         """Route to appropriate recommendation service based on catalog ID."""
         claimed = claimed or {}
+        if mix and settings.MIXED_BASE_ROWS and catalog_id in MIXED_BASE_IDS and user_settings and token:
+            types, states = await row_states(
+                token, library_items, catalog_id, content_type, (profile, watched_tmdb, watched_imdb), user_settings
+            )
+
+            async def build(row_type: str, state: TypeState, share: int) -> list[dict[str, Any]]:
+                return await self._get_recommendations(
+                    catalog_id,
+                    row_type,
+                    services,
+                    state[0],
+                    state[1],
+                    state[2],
+                    library_items,
+                    share,
+                    user_settings,
+                    mix=False,
+                )
+
+            return await blend(types, states, claimed, limit, build)
+
         mixed_theme = MIXED_THEME.match(catalog_id)
         if user_settings and token and (catalog_id.startswith("watchly.ctx.") or mixed_theme):
-            types = enabled_types(user_settings, "watchly.theme" if mixed_theme else "watchly.ctx")
-            states = {content_type: (profile, watched_tmdb, watched_imdb)}
-            if OTHER_TYPE[content_type] in types:
-                states[OTHER_TYPE[content_type]] = await other_type_state(
-                    token, library_items, content_type, user_settings
-                )
-            types = [content_type] + [t for t in types if t != content_type]
+            types, states = await row_states(
+                token,
+                library_items,
+                "watchly.theme" if mixed_theme else "watchly.ctx",
+                content_type,
+                (profile, watched_tmdb, watched_imdb),
+                user_settings,
+            )
             if mixed_theme:
                 return await mixed_theme_recommendations(services["theme"], catalog_id, types, states, claimed, limit)
             return await services["ctx"].get_mixed(catalog_id, types, states, claimed, limit)

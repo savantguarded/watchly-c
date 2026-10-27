@@ -148,6 +148,7 @@
                     </div>
                 </div>
 
+                {% if show_sorting_order %}
                 <div>
                     <label for="sortingOrderSelect" class="field-label">Movies and series order</label>
                     <div class="relative">
@@ -160,6 +161,7 @@
                     </div>
                     <p class="field-hint">Group movie rows first, series first, or mix them.</p>
                 </div>
+                {% endif %}
 
                 <div>
                     <div class="flex items-center justify-between">

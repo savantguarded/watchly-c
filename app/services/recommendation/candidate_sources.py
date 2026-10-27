@@ -4,6 +4,7 @@ from typing import Any
 
 from loguru import logger
 
+from app.core.config import settings
 from app.core.settings import UserSettings
 from app.models.library import LibraryCollection
 from app.models.profile import TasteProfile
@@ -134,7 +135,11 @@ class CandidateFetcher:
 
     def _add_discover_task(self, tasks: list, mtype: str, without_genres: str | None, **kwargs: Any) -> None:
         """Add a discover task to the list of tasks with default parameters."""
-        sort_by = RecommendationFiltering.get_sort_by_preference(self.user_settings)
+        sort_by = (
+            "vote_average.desc"
+            if settings.QUALITY_TOP_PICKS
+            else RecommendationFiltering.get_sort_by_preference(self.user_settings)
+        )
         params = {
             "sort_by": sort_by,
             **kwargs,

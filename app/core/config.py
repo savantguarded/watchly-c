@@ -68,6 +68,7 @@ class Settings(BaseSettings):
     WIDE_THEME_ROWS: bool = True
     CONTEXT_ROWS: bool = True
     CROSS_ROW_DEDUPE: bool = True
+    QUALITY_TOP_PICKS: bool = True
     RETIRE_ALL_BASED: bool = True
     MIXED_BASE_ROWS: bool = True
     # Rows with Shuffle on keep one order for this many hours, then reshuffle. 0 is

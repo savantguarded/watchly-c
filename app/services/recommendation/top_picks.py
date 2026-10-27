@@ -3,6 +3,7 @@ from typing import Any
 
 from loguru import logger
 
+from app.core.config import settings
 from app.core.constants import DEFAULT_CATALOG_LIMIT, MAX_CATALOG_ITEMS
 from app.core.settings import UserSettings
 from app.models.library import LibraryCollection
@@ -16,6 +17,7 @@ from app.services.recommendation.metadata import RecommendationMetadata
 from app.services.recommendation.scoring import RecommendationScoring
 from app.services.recommendation.utils import content_type_to_mtype
 from app.services.tmdb.service import TMDBService
+from app.watchly_c import top_picks as quality_picks
 
 
 class TopPicksService:
@@ -71,20 +73,23 @@ class TopPicksService:
 
         # 3. Score all candidates with profile
         scored_candidates = []
-        for item in filtered_candidates:
-            try:
-                final_score = RecommendationScoring.calculate_final_score(
-                    item=item,
-                    profile=profile,
-                    scorer=self.scorer,
-                    mtype=mtype,
-                )
-                scored_candidates.append((final_score, item))
-            except Exception as e:
-                logger.debug(f"Failed to score item {item.get('id')}: {e}")
-                continue
+        if settings.QUALITY_TOP_PICKS:
+            scored_candidates = quality_picks.rank(filtered_candidates, profile, self.scorer, mtype)
+        else:
+            for item in filtered_candidates:
+                try:
+                    final_score = RecommendationScoring.calculate_final_score(
+                        item=item,
+                        profile=profile,
+                        scorer=self.scorer,
+                        mtype=mtype,
+                    )
+                    scored_candidates.append((final_score, item))
+                except Exception as e:
+                    logger.debug(f"Failed to score item {item.get('id')}: {e}")
+                    continue
 
-        scored_candidates.sort(key=lambda x: x[0], reverse=True)
+            scored_candidates.sort(key=lambda x: x[0], reverse=True)
         logger.info(f"Scored {len(scored_candidates)} candidates.")
 
         # 4. Apply diversity caps (cap to 3x the target so the genre cap is meaningful

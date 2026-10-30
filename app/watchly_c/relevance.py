@@ -6,7 +6,9 @@ from typing import Any
 
 from loguru import logger
 
+from app.core.config import settings
 from app.core.constants import DEFAULT_MINIMUM_RATING_FOR_THEME_BASED_MOVIE, DEFAULT_MINIMUM_RATING_FOR_THEME_BASED_TV
+from app.watchly_c.fit import fits_seed
 from app.services.recommendation.filtering import (
     RecommendationFiltering,
     apply_discover_filters,
@@ -40,6 +42,7 @@ class Seed:
     language: str | None
     year: int | None
     keywords: tuple[int, ...]
+    every_keyword: frozenset[int] = frozenset()
 
     @classmethod
     def from_details(cls, details: dict[str, Any]) -> "Seed":
@@ -50,6 +53,7 @@ class Seed:
             language=details.get("original_language"),
             year=RecommendationMetadata.extract_year(details),
             keywords=keywords[:KEYWORDS_USED],
+            every_keyword=frozenset(keywords),
         )
 
 
@@ -170,6 +174,8 @@ class RankedItemService(ItemBasedService):
         enriched = await RecommendationMetadata.fetch_batch(
             self.tmdb_service, ranked[: row_size(limit)], content_type, user_settings=self.user_settings
         )
+        if settings.FIT_GATE:
+            enriched = [i for i in enriched if fits_seed(i, set(seed.genres), seed.every_keyword)]
         return filter_watched_by_imdb(enriched, watched_imdb or set())
 
     def _ranked(

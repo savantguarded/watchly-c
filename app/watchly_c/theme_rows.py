@@ -19,6 +19,7 @@ from app.services.recommendation.metadata import RecommendationMetadata
 from app.services.recommendation.theme_based import ThemeBasedService
 from app.services.recommendation.utils import content_type_to_mtype
 from app.services.row_generator import RowDefinition
+from app.watchly_c.fit import fits_theme, theme_axis_ids
 from app.watchly_c.mixed_context import TypeState, blend
 from app.watchly_c.mixed_rows import MOVIE_TO_SERIES_GENRES, OTHER_TYPE, SERIES_TO_MOVIE_GENRES
 from app.watchly_c.relevance import BASE_FLOOR, clears_floor, quality
@@ -49,9 +50,18 @@ class WideThemeService(ThemeBasedService):
             theme_id, content_type, profile, watched_tmdb, watched_imdb, limit
         )
         picks = [p for p in picks if clears_floor(p, BASE_FLOOR)]
+        if settings.FIT_GATE:
+            picks = [p for p in picks if self._fits(p, theme_id)]
         if len(picks) >= limit:
             return picks
-        return picks + await self._top_up(picks, theme_id, content_type, watched_tmdb, watched_imdb, limit)
+        extra = await self._top_up(picks, theme_id, content_type, watched_tmdb, watched_imdb, limit)
+        if settings.FIT_GATE:
+            extra = [p for p in extra if self._fits(p, theme_id)]
+        return picks + extra
+
+    def _fits(self, item: dict[str, Any], theme_id: str) -> bool:
+        anchors, flavors, fallbacks = self._parse_theme_id(theme_id)
+        return fits_theme(item, *theme_axis_ids({**anchors, **flavors, **fallbacks}))
 
     async def _top_up(
         self,
@@ -244,4 +254,6 @@ async def _cross_theme(
     enriched = await RecommendationMetadata.fetch_batch(
         service.tmdb_service, usable[: math.ceil(count * 1.5)], content_type, user_settings=service.user_settings
     )
+    if settings.FIT_GATE:
+        enriched = [i for i in enriched if fits_theme(i, *theme_axis_ids(axes))]
     return filter_watched_by_imdb(enriched, watched_imdb)[:count]

@@ -110,7 +110,9 @@ class FakeTMDB:
 
 
 async def fake_fetch_batch(tmdb_service, items, media_type, user_settings=None):
-    return [{"id": f"tt{i['id']}", "_tmdb_id": i["id"], "type": "movie"} for i in items]
+    return [
+        {"id": f"tt{i['id']}", "_tmdb_id": i["id"], "type": "movie", "genre_ids": i.get("genre_ids", [])} for i in items
+    ]
 
 
 def serve(monkeypatch, tmdb: FakeTMDB, seed_rating=None, limit=20):

@@ -67,6 +67,7 @@ class Settings(BaseSettings):
     REROLL_SEEDS_ON_REFRESH: bool = True
     RELEVANCE_RANKING: bool = True
     WIDE_THEME_ROWS: bool = True
+    FIT_GATE: bool = True
     CONTEXT_ROWS: bool = True
     CROSS_ROW_DEDUPE: bool = True
     QUALITY_TOP_PICKS: bool = True

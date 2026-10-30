@@ -154,7 +154,15 @@ class FakeTMDB:
 
 
 async def fake_fetch_batch(tmdb_service, items, media_type, user_settings=None):
-    return [{"id": f"tt{9000 + i['id']}", "type": "series" if media_type == "series" else "movie"} for i in items]
+    return [
+        {
+            "id": f"tt{9000 + i['id']}",
+            "type": "series" if media_type == "series" else "movie",
+            "genre_ids": i.get("genre_ids", []),
+            "keywords": {"results": [{"id": 9}]},
+        }
+        for i in items
+    ]
 
 
 @pytest.fixture

@@ -6,6 +6,7 @@ from app.watchly_c import theme_rows
 from app.watchly_c.theme_rows import WideThemeService
 
 THEME = "watchly.theme.a:g27"
+KEYWORD_THEME = "watchly.theme.a:g27.f:k5"
 
 
 def candidate(tmdb_id: int, avg: float = 7.4, votes: int = 900) -> dict:
@@ -33,21 +34,30 @@ class FakeTMDB:
 
 
 async def fake_fetch_batch(tmdb_service, items, media_type, user_settings=None):
-    return [{"id": f"tt{i['id']}", "_tmdb_id": i["id"], "type": "movie"} for i in items]
+    return [
+        {"id": f"tt{i['id']}", "_tmdb_id": i["id"], "type": "movie", "genre_ids": i.get("genre_ids", [])} for i in items
+    ]
 
 
-def serve(monkeypatch, stock: list[dict], tmdb: FakeTMDB, limit=20):
+def serve(monkeypatch, stock: list[dict], tmdb: FakeTMDB, limit=20, theme=THEME):
     async def stock_row(self, *args, **kwargs):
         return stock
 
     monkeypatch.setattr(ThemeBasedService, "get_recommendations_for_theme", stock_row)
     monkeypatch.setattr(theme_rows.RecommendationMetadata, "fetch_batch", fake_fetch_batch)
     service = WideThemeService(tmdb, get_default_settings())
-    return asyncio.run(service.get_recommendations_for_theme(THEME, "movie", None, set(), set(), limit))
+    return asyncio.run(service.get_recommendations_for_theme(theme, "movie", None, set(), set(), limit))
 
 
 def stock_pick(tmdb_id: int, avg: float = 7.4) -> dict:
-    return {"id": f"tt{tmdb_id}", "_tmdb_id": tmdb_id, "vote_average": avg, "vote_count": 900, "type": "movie"}
+    return {
+        "id": f"tt{tmdb_id}",
+        "_tmdb_id": tmdb_id,
+        "vote_average": avg,
+        "vote_count": 900,
+        "type": "movie",
+        "genre_ids": [27],
+    }
 
 
 def test_a_short_row_is_topped_up_to_the_limit(monkeypatch):
@@ -115,11 +125,21 @@ def test_a_mixed_theme_row_alternates_its_own_type_with_the_others_matching_titl
 
     async def typed_batch(tmdb_service, items, media_type, user_settings=None):
         kind = "series" if media_type in ("tv", "series") else "movie"
-        return [{"id": f"tt{kind}{i['id']}", "_tmdb_id": i["id"], "type": kind} for i in items]
+        return [
+            {"id": f"tt{kind}{i['id']}", "_tmdb_id": i["id"], "type": kind, "keywords": {"results": [{"id": 5}]}}
+            for i in items
+        ]
 
     async def native_row(self, theme_id, content_type, profile, watched_tmdb, watched_imdb, limit):
         return [
-            {"id": f"ttnative{n}", "_tmdb_id": n, "type": content_type, "vote_average": 8, "vote_count": 999}
+            {
+                "id": f"ttnative{n}",
+                "_tmdb_id": n,
+                "type": content_type,
+                "vote_average": 8,
+                "vote_count": 999,
+                "keywords": {"results": [{"id": 5}]},
+            }
             for n in range(limit)
         ]
 
@@ -140,3 +160,14 @@ def test_a_mixed_theme_row_alternates_its_own_type_with_the_others_matching_titl
     movie_calls = [c for c in tmdb.calls if c["type"] == "movie"]
     assert movie_calls and all(c["with_genres"] == "878|14" for c in movie_calls)
     assert 1000 not in {m["_tmdb_id"] for m in out if m["type"] == "movie"}
+
+
+def test_a_keyword_row_drops_picks_without_its_keyword(monkeypatch):
+    stock = [
+        {**stock_pick(1), "keywords": {"results": [{"id": 5}]}},
+        {**stock_pick(2), "keywords": {"results": [{"id": 77}]}},
+    ]
+
+    out = serve(monkeypatch, stock, FakeTMDB(depth=0), limit=2, theme=KEYWORD_THEME)
+
+    assert [p["_tmdb_id"] for p in out] == [1]

@@ -68,6 +68,7 @@ class Settings(BaseSettings):
     RELEVANCE_RANKING: bool = True
     WIDE_THEME_ROWS: bool = True
     FIT_GATE: bool = True
+    MIN_ROW_TITLES: int = 8
     CONTEXT_ROWS: bool = True
     CROSS_ROW_DEDUPE: bool = True
     QUALITY_TOP_PICKS: bool = True

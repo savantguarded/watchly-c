@@ -235,10 +235,14 @@ class CatalogService:
             logger.debug(f"Returning {len(recommendations)} items for {content_type}")
 
             cleaned = [m for m in (clean_meta(m) for m in recommendations) if m is not None]
+            short = 0 < len(cleaned) < settings.MIN_ROW_TITLES
+            if short:
+                logger.info(f"[{redact_token(ctx.token)}] {catalog_id} hidden: {len(cleaned)} titles")
+                cleaned = []
             if settings.CROSS_ROW_DEDUPE:
-                shown = [m for m in recommendations if clean_meta(m) is not None]
+                shown = [] if short else [m for m in recommendations if clean_meta(m) is not None]
                 await record_claims(ctx.token, content_type, catalog_id, shown)
-            if cleaned:
+            if cleaned or short:
                 # Cached unshuffled: a cache hit shuffles what it reads, so a shuffled
                 # copy here would serve a different order on the first request than on
                 # every later one in the same window.

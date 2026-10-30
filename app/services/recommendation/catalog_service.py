@@ -27,12 +27,13 @@ from app.services.tmdb.service import get_tmdb_service
 from app.services.token_store import token_store
 from app.services.user_cache import user_cache
 from app.services.warmup import warmup_service
+from app.watchly_c.base_rows import MIXED_BASE_IDS
 from app.watchly_c.context_rows import ContextRowService
 from app.watchly_c.dedupe import claimed_by_earlier_rows, record_claims
-from app.watchly_c.base_rows import MIXED_BASE_IDS
 from app.watchly_c.mixed_context import TypeState, blend, row_states
 from app.watchly_c.mixed_rows import MIXED_ITEM_PREFIX, mixed_recommendations
 from app.watchly_c.relevance import RankedItemService
+from app.watchly_c.short_rows import NOT_TOPPED_UP, SHORT_ROW_TTL_SECONDS, top_up
 from app.watchly_c.theme_rows import MIXED_THEME, WideThemeService, mixed_theme_recommendations
 
 REFRESH_LOCK_PREFIX = "watchly:refreshlock:"
@@ -232,6 +233,25 @@ class CatalogService:
                 token=ctx.token,
             )
 
+            if settings.FULL_ROWS and resolved_id not in NOT_TOPPED_UP:
+
+                async def more(taken: dict[str, set[int]], limit: int) -> list[dict[str, Any]]:
+                    return await self._get_recommendations(
+                        catalog_id="watchly.rec",
+                        content_type=content_type,
+                        services=services,
+                        profile=profile,
+                        watched_tmdb=watched_tmdb,
+                        watched_imdb=watched_imdb,
+                        library_items=ctx.library,
+                        limit=limit,
+                        user_settings=ctx.user_settings,
+                        claimed=taken,
+                        token=ctx.token,
+                    )
+
+                recommendations = await top_up(recommendations, claimed, more)
+
             logger.debug(f"Returning {len(recommendations)} items for {content_type}")
 
             cleaned = [m for m in (clean_meta(m) for m in recommendations) if m is not None]
@@ -242,8 +262,13 @@ class CatalogService:
                 # Cached unshuffled: a cache hit shuffles what it reads, so a shuffled
                 # copy here would serve a different order on the first request than on
                 # every later one in the same window.
+                short = settings.FULL_ROWS and len(cleaned) < DEFAULT_CATALOG_LIMIT
                 await user_cache.set_catalog(
-                    ctx.token, content_type, catalog_id, {"metas": cleaned}, settings.CATALOG_STALE_TTL
+                    ctx.token,
+                    content_type,
+                    catalog_id,
+                    {"metas": cleaned},
+                    SHORT_ROW_TTL_SECONDS if short else settings.CATALOG_STALE_TTL,
                 )
 
             return {"metas": shuffle_data_if_needed(ctx.user_settings, catalog_id, cleaned)}, headers

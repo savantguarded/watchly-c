@@ -105,6 +105,15 @@ def test_a_title_known_only_from_progress_gets_its_name_from_tmdb():
     assert by_id["tt0113277"].name == "tt0113277"
 
 
+def test_a_series_row_named_after_its_episode_keeps_only_the_show_name():
+    items: dict = {}
+    for content_id, title in (("tt1", "Breaking Bad S01E11"), ("tt2", "Dark - s02e03 Lies"), ("tt3", "S01E01")):
+        NuvioService._merge(items, watched_row(content_id, "series", 1767650000000, title=title), 1.0, 1767650000000)
+    NuvioService._merge(items, watched_row("tt4", "movie", 1767650000000, title="Se7en"), 1.0, 1767650000000)
+
+    assert {k: v.name for k, v in items.items()} == {"tt1": "Breaking Bad", "tt2": "Dark", "tt3": "", "tt4": "Se7en"}
+
+
 def test_a_failed_title_lookup_leaves_the_name_empty_and_keeps_the_history():
     class DownTMDB(FakeTMDB):
         async def get_movie_details(self, tmdb_id: int):

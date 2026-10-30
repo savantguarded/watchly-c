@@ -8,7 +8,7 @@ from app.core.base_client import BaseClient
 from app.core.config import settings
 from app.core.constants import DEFAULT_CONCURRENCY_LIMIT
 from app.models.history import WatchHistory, WatchHistoryItem
-from app.watchly_c.names import fill_missing_titles
+from app.watchly_c.names import fill_missing_titles, series_name
 
 if TYPE_CHECKING:
     from app.services.tmdb.service import TMDBService
@@ -142,10 +142,11 @@ class NuvioService:
 
         existing = items.get(content_id)
         if existing is None:
+            name = str(row.get("title") or row.get("name") or "")
             items[content_id] = WatchHistoryItem(
                 imdb_id=content_id,
                 type=mtype,
-                name=str(row.get("title") or row.get("name") or ""),
+                name=series_name(name) if mtype == "series" else name,
                 completion=completion,
                 last_watched=last_watched,
                 source="nuvio",

@@ -97,5 +97,9 @@ class RewatchService:
         picked = sorted(random.sample(top, k=min(limit, len(top))), key=lambda x: x[0], reverse=True)
 
         return await RecommendationMetadata.fetch_batch(
-            self.tmdb_service, [item for _, item in picked], content_type, user_settings=self.user_settings
+            self.tmdb_service,
+            [item for _, item in picked],
+            content_type,
+            user_settings=self.user_settings,
+            released_only=False,
         )

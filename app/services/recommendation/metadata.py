@@ -3,8 +3,11 @@ from typing import Any
 
 from loguru import logger
 
+from app.core.config import settings
 from app.core.constants import DEFAULT_CONCURRENCY_LIMIT
 from app.services.poster_ratings.factory import PosterProvider, poster_ratings_factory
+from app.watchly_c.digital import is_available
+from app.watchly_c.seeds import today
 
 
 class RecommendationMetadata:
@@ -144,8 +147,11 @@ class RecommendationMetadata:
         items: list[dict[str, Any]],
         media_type: str,
         user_settings: Any = None,
+        released_only: bool = True,
     ) -> list[dict[str, Any]]:
-        """Fetch details for a batch of items in parallel with target-based short-circuiting."""
+        """Fetch details for a batch of items in parallel with target-based short-circuiting.
+
+        `released_only` is off for titles the user already watched, which are out by definition."""
         final_results = []
         valid_items = [it for it in items if it.get("id")]
         query_type = "movie" if media_type == "movie" else "tv"
@@ -175,6 +181,8 @@ class RecommendationMetadata:
                     return {}
 
         successful_details = [d for d in details_list if d]
+        if settings.DIGITAL_RELEASE_ONLY and released_only:
+            successful_details = [d for d in successful_details if is_available(d, media_type, today())]
         image_tasks = [_images_one(d) for d in successful_details]
         images_list = await asyncio.gather(*image_tasks, return_exceptions=True)
 

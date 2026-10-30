@@ -5,6 +5,7 @@ import httpx
 from async_lru import alru_cache
 from loguru import logger
 
+from app.core.config import settings
 from app.services.tmdb.client import TMDBClient
 
 # from app.services.profile.constants import TOP_PICKS_MIN_VOTE_COUNT, TOP_PICKS_MIN_RATING
@@ -72,8 +73,10 @@ class TMDBService:
     @alru_cache(maxsize=500, ttl=86400)
     async def get_movie_details(self, movie_id: int) -> dict[str, Any]:
         """Get details of a specific movie with credits and keywords."""
-        params = {"append_to_response": "credits,external_ids,keywords"}
-        return await self.client.get(f"/movie/{movie_id}", params=params)
+        appended = "credits,external_ids,keywords"
+        if settings.DIGITAL_RELEASE_ONLY:
+            appended += ",release_dates"
+        return await self.client.get(f"/movie/{movie_id}", params={"append_to_response": appended})
 
     @alru_cache(maxsize=500, ttl=86400)
     async def get_tv_details(self, tv_id: int) -> dict[str, Any]:

@@ -16,6 +16,7 @@ from app.watchly_c.context_rows import (
     Today,
     choose_specs,
     context_catalogs,
+    is_eligible,
 )
 
 TOKEN = "tok_ctx"
@@ -75,6 +76,36 @@ def test_the_rotating_slot_cycles_through_every_evergreen_row():
             shown[spec.key] = today_.day.isoformat()
             seen.add(spec.key)
     assert seen >= {s.key for s in SPECS if s.kind == "evergreen"}
+
+
+def test_every_row_has_a_definition_for_each_type_it_claims():
+    for spec in SPECS:
+        if not spec.build:
+            assert set(spec.types) <= set(spec.looks), spec.key
+
+
+def test_weekday_rows_only_appear_on_their_day():
+    for key, weekday in (("monday", "2026-11-02"), ("midweek", "2026-11-04"), ("thursday", "2026-11-05")):
+        assert key in [s.key for s in SPECS if is_eligible(s, at(weekday))]
+        assert key not in [s.key for s in SPECS if is_eligible(s, at("2026-11-03"))]
+
+
+def test_payday_runs_from_the_25th_to_the_end_of_the_month():
+    assert is_eligible(SPEC_BY_KEY["payday"], at("2026-10-25"))
+    assert is_eligible(SPEC_BY_KEY["payday"], at("2026-10-31"))
+    assert not is_eligible(SPEC_BY_KEY["payday"], at("2026-10-24"))
+
+
+def test_a_new_row_is_picked_every_day_for_three_weeks():
+    shown: dict[str, str] = {}
+    picked: list[set[str]] = []
+    for n in range(21):
+        today_ = Today(date(2026, 4, 1) + timedelta(days=n), False, True)
+        day = {s.key for s in choose_specs(BOTH, today_, shown, random.Random(n), 6)} - {"on_this_day"}
+        shown.update({k: today_.day.isoformat() for k in day})
+        picked.append(day)
+    assert all(a != b for a, b in zip(picked, picked[1:]))
+    assert len(set().union(*picked)) >= 20
 
 
 def test_no_people_row_without_a_movie_to_build_it_from():

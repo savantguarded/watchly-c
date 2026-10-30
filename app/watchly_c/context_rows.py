@@ -35,7 +35,7 @@ CONTEXT_CONFIG_ID = "watchly.ctx"
 CONTEXT_PREFIX = "watchly.ctx."
 LOG_TTL_SECONDS = 45 * 86400
 # Bumped when the rules for choosing a day's rows change, so a day already chosen is chosen again.
-LOG_VERSION = 3
+LOG_VERSION = 4
 # Widening levels: more pages and a lower vote floor each time, only while a row is short.
 LEVELS = 3
 FIRST_ON_THIS_DAY_YEAR = 1960
@@ -328,8 +328,201 @@ SPECS: tuple[Spec, ...] = (
         {"series": (Look(votes=200, rating=7.0, extra={"with_type": 2}),)},
         types=("series",),
     ),
+    Spec(
+        "monday",
+        "moment",
+        "Monday Motivation",
+        {
+            "movie": (
+                Look(keywords=("underdog", "sports", "inspirational", "triumph"), votes=400, rating=7.0),
+                Look(genres="18", keywords=("underdog", "coach"), votes=300, rating=7.2),
+            ),
+            "series": (Look(keywords=("underdog", "sports", "inspirational"), votes=150, rating=7.3),),
+        },
+    ),
+    Spec(
+        "midweek",
+        "moment",
+        "Midweek Pick-Me-Up",
+        {
+            "movie": (Look(genres="35", runtime=(None, 110), votes=1000, rating=7.0),),
+            "series": (Look(genres="35", runtime=(None, 35), votes=400, rating=7.5),),
+        },
+    ),
+    Spec(
+        "thursday",
+        "moment",
+        "Thursday Thrills",
+        {
+            "movie": (Look(genres="53|9648|80", votes=1000, rating=7.0),),
+            "series": (Look(genres="80|9648", votes=500, rating=7.5),),
+        },
+    ),
+    Spec(
+        "payday",
+        "moment",
+        "Payday Treat",
+        {
+            "movie": (
+                Look(genres="28|12|878|14", sort="popularity.desc", recent_days=SIX_YEARS, votes=2000, rating=6.8),
+            ),
+            "series": (
+                Look(genres="10759|10765", sort="popularity.desc", recent_days=SIX_YEARS, votes=800, rating=7.2),
+            ),
+        },
+    ),
+    Spec(
+        "back_to_school",
+        "season",
+        "Back to School",
+        {
+            "movie": (Look(genres="35|18|10749", keywords=("high school", "teacher", "college"), votes=400),),
+            "series": (Look(keywords=("high school", "teacher", "college"), votes=200),),
+        },
+        window=((8, 25), (9, 20)),
+    ),
+    Spec(
+        "detty_december",
+        "season",
+        "Detty December",
+        {
+            "movie": (Look(genres="35|10402|10749", votes=500, rating=6.8),),
+            "series": (Look(genres="35", votes=200, rating=7.2),),
+        },
+        window=((12, 10), (12, 31)),
+    ),
+    Spec(
+        "mind_benders",
+        "evergreen",
+        "Mind Benders",
+        {
+            "movie": (
+                Look(
+                    keywords=("twist ending", "nonlinear timeline", "time loop", "parallel universe", "dream"),
+                    votes=800,
+                    rating=7.2,
+                ),
+            ),
+            "series": (
+                Look(keywords=("twist ending", "time travel", "parallel universe", "mystery"), votes=200, rating=7.4),
+            ),
+        },
+    ),
+    Spec(
+        "true_stories",
+        "evergreen",
+        "True Stories",
+        {
+            "movie": (Look(keywords=("based on true story", "biography", "true crime"), votes=800, rating=7.2),),
+            "series": (Look(keywords=("based on true story", "true crime"), votes=200, rating=7.3),),
+        },
+    ),
+    Spec(
+        "feel_good",
+        "evergreen",
+        "Feel-Good Favourites",
+        {
+            "movie": (Look(genres="35|10751|10749", runtime=(None, 120), votes=800, rating=7.0),),
+            "series": (Look(genres="35|10751", votes=300, rating=7.3),),
+        },
+    ),
+    Spec(
+        "heists",
+        "evergreen",
+        "Heists and Cons",
+        {
+            "movie": (Look(keywords=("heist", "con artist", "robbery"), votes=500, rating=6.9),),
+            "series": (Look(keywords=("heist", "con artist", "robbery"), votes=150, rating=7.2),),
+        },
+    ),
+    Spec(
+        "classics",
+        "evergreen",
+        "Certified Classics",
+        {"movie": (Look(dates=(date(1950, 1, 1), date(2005, 12, 31)), votes=4000, rating=7.8),)},
+        types=("movie",),
+    ),
+    Spec(
+        "finished_series",
+        "evergreen",
+        "Finished and Worth the Binge",
+        {"series": (Look(votes=1000, rating=8.0, extra={"with_status": "3"}),)},
+        types=("series",),
+    ),
+    Spec(
+        "short_and_sweet",
+        "evergreen",
+        "Short and Sweet",
+        {"movie": (Look(runtime=(60, 95), votes=800, rating=7.0),)},
+        types=("movie",),
+    ),
+    Spec(
+        "epics",
+        "evergreen",
+        "Epics Worth the Time",
+        {"movie": (Look(runtime=(150, None), votes=2000, rating=7.6),)},
+        types=("movie",),
+    ),
+    Spec(
+        "animation_grown_up",
+        "evergreen",
+        "Animation Beyond Kids",
+        {
+            "movie": (Look(genres="16", without_genres="10751", votes=800, rating=7.4),),
+            "series": (Look(genres="16", without_genres="10751|10762", votes=300, rating=7.6),),
+        },
+    ),
+    Spec(
+        "documentaries",
+        "evergreen",
+        "Docs Worth Your Time",
+        {
+            "movie": (Look(genres="99", votes=300, rating=7.3),),
+            "series": (Look(genres="99", votes=150, rating=7.5),),
+        },
+    ),
+    Spec(
+        "sci_fi",
+        "evergreen",
+        "Sci-Fi to Stay Up For",
+        {
+            "movie": (Look(genres="878", votes=1500, rating=7.2),),
+            "series": (Look(genres="10765", votes=600, rating=7.4),),
+        },
+    ),
+    Spec(
+        "crime",
+        "evergreen",
+        "Crime and Consequence",
+        {
+            "movie": (Look(genres="80", votes=1000, rating=7.2),),
+            "series": (Look(genres="80", votes=500, rating=7.5),),
+        },
+    ),
+    Spec(
+        "fresh",
+        "evergreen",
+        "New and Worth It",
+        {
+            "movie": (Look(sort="popularity.desc", recent_days=150, votes=200, rating=7.0),),
+            "series": (Look(sort="popularity.desc", recent_days=150, votes=100, rating=7.3),),
+        },
+    ),
+    Spec(
+        "made_in_nigeria",
+        "evergreen",
+        "Made in Nigeria",
+        {
+            "movie": (Look(countries="NG", sort="popularity.desc", votes=10, pages=4, language=None),),
+            "series": (Look(countries="NG", sort="popularity.desc", votes=5, pages=2, language=None),),
+        },
+        floor=6.0,
+        min_votes=5,
+    ),
 )
 SPEC_BY_KEY = {s.key: s for s in SPECS}
+# Rows that belong to one weekday (Monday is 0).
+WEEKDAY_ROWS = {"monday": 0, "midweek": 2, "thursday": 3}
 
 
 @dataclass(frozen=True)
@@ -348,6 +541,10 @@ def is_eligible(spec: Spec, today_: Today) -> bool:
         return today_.day.weekday() in (4, 5)
     if spec.key == "sunday":
         return today_.day.weekday() == 6
+    if spec.key in WEEKDAY_ROWS:
+        return today_.day.weekday() == WEEKDAY_ROWS[spec.key]
+    if spec.key == "payday":
+        return today_.day.day >= 25
     if spec.key == "rainy":
         return today_.rain
     if spec.key == "people":
@@ -513,9 +710,7 @@ class ContextRowService:
             if len(usable) >= row_size(limit):
                 break
 
-        usable.sort(
-            key=lambda i: (level_found[i["id"]] if spec.nearest_first else 0, -self._score(i, profile, mtype))
-        )
+        usable.sort(key=lambda i: (level_found[i["id"]] if spec.nearest_first else 0, -self._score(i, profile, mtype)))
         enriched = await RecommendationMetadata.fetch_batch(
             self.tmdb_service, usable[: row_size(limit)], content_type, user_settings=self.user_settings
         )

@@ -233,7 +233,7 @@ class CatalogService:
                 token=ctx.token,
             )
 
-            if settings.FULL_ROWS and resolved_id not in NOT_TOPPED_UP:
+            if settings.FULL_ROWS and not resolved_id.startswith(NOT_TOPPED_UP):
 
                 async def more(taken: dict[str, set[int]], limit: int) -> list[dict[str, Any]]:
                     return await self._get_recommendations(

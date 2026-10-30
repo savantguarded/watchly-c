@@ -5,8 +5,9 @@ from loguru import logger
 
 from app.core.constants import DEFAULT_CATALOG_LIMIT
 
-# Rows whose own list is the point: topping them up with Top Picks would mislabel them.
-NOT_TOPPED_UP = ("watchly.rec", "watchly.rewatch")
+# Rows whose label promises where their titles come from: topping them up with Top Picks
+# would put titles in a "Because you watched" row that have nothing to do with the seed.
+NOT_TOPPED_UP = ("watchly.rec", "watchly.rewatch", "watchly.item.")
 # A row that still falls short expires soon so it is retried, but not so soon that Stremio's
 # burst of requests for every row rebuilds it each time.
 SHORT_ROW_TTL_SECONDS = 600

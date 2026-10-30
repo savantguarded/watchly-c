@@ -116,6 +116,11 @@ def test_a_row_that_stays_short_is_cached_briefly(monkeypatch):
     assert stored["ttl"] == SHORT_ROW_TTL_SECONDS
 
 
+def test_because_you_watched_rows_are_not_topped_up_with_unrelated_titles(monkeypatch):
+    for catalog_id in ("watchly.item.1", "watchly.item.mix.movie.tt0325980"):
+        assert len(build_row(monkeypatch, fill(1, 12), fill(100, 30), catalog_id)["metas"]) == 12
+
+
 def test_top_picks_and_watch_it_again_are_not_topped_up(monkeypatch):
     assert len(build_row(monkeypatch, fill(1, 12), fill(100, 30), "watchly.rewatch")["metas"]) == 12
     assert len(build_row(monkeypatch, fill(1, 12), fill(100, 30), "watchly.rec")["metas"]) == 12

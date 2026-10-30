@@ -80,17 +80,29 @@ def test_top_up_never_repeats_a_stock_pick(monkeypatch):
     assert [m["_tmdb_id"] for m in out].count(1000) == 1
 
 
-def test_widening_keywords_skip_credit_tags(monkeypatch):
-    from app.models.profile import TasteProfile
+def ladder(anchors: dict, flavors: dict | None = None, fallbacks: dict | None = None) -> list[dict]:
+    service = WideThemeService(FakeTMDB(depth=0), get_default_settings())
+    return [params for params, _ in service._ladder(anchors, flavors or {}, fallbacks or {}, "movie")]
 
-    class Names(FakeTMDB):
-        async def get_keyword_details(self, keyword_id):
-            return {"name": {1: "duringcreditsstinger", 2: "heist"}.get(keyword_id, "other")}
 
-    service = WideThemeService(Names(depth=0), get_default_settings())
-    profile = TasteProfile(keyword_scores={1: 9.0, 2: 8.0, 3: 7.0})
+def test_a_keyword_row_keeps_its_keyword_in_every_widening_and_never_adds_others():
+    steps = ladder({"keyword": "9715"}, {"genre": "28"}, {"country": "US"})
 
-    assert asyncio.run(service._favourite_keywords(profile)) == [2, 3]
+    assert len(steps) >= 2
+    assert all(step["with_keywords"] == "9715" for step in steps)
+
+
+def test_a_keyword_row_never_widens_to_its_genre_alone():
+    steps = ladder({"genre": "28"}, {"keyword": "9715"})
+
+    assert all(step.get("with_keywords") == "9715" for step in steps)
+
+
+def test_a_genre_row_without_a_keyword_still_widens_to_its_leading_genre():
+    steps = ladder({"genre": "27-53"})
+
+    assert steps[-1]["with_genres"] == "27"
+    assert all("with_keywords" not in step for step in steps)
 
 
 def test_a_mixed_theme_row_alternates_its_own_type_with_the_others_matching_titles(monkeypatch):

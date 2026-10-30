@@ -71,7 +71,6 @@ class Settings(BaseSettings):
     CROSS_ROW_DEDUPE: bool = True
     QUALITY_TOP_PICKS: bool = True
     DIGITAL_RELEASE_ONLY: bool = True
-    FULL_ROWS: bool = True
     ROTATE_THEME_ROWS: bool = True
     RETIRE_ALL_BASED: bool = True
     MIXED_BASE_ROWS: bool = True

@@ -1,4 +1,3 @@
-import asyncio
 import itertools
 import math
 import re
@@ -7,8 +6,8 @@ from typing import Any
 
 from loguru import logger
 
-from app.core.constants import DISCOVER_ONLY_EXTRA
 from app.core.config import settings
+from app.core.constants import DISCOVER_ONLY_EXTRA
 from app.models.profile import TasteProfile
 from app.services.recommendation.filtering import (
     RecommendationFiltering,
@@ -17,10 +16,9 @@ from app.services.recommendation.filtering import (
     filter_watched_by_imdb,
 )
 from app.services.recommendation.metadata import RecommendationMetadata
-from app.services.row_generator import RowDefinition
 from app.services.recommendation.theme_based import ThemeBasedService
 from app.services.recommendation.utils import content_type_to_mtype
-from app.watchly_c.meta_keywords import is_meta_keyword
+from app.services.row_generator import RowDefinition
 from app.watchly_c.mixed_context import TypeState, blend
 from app.watchly_c.mixed_rows import MOVIE_TO_SERIES_GENRES, OTHER_TYPE, SERIES_TO_MOVIE_GENRES
 from app.watchly_c.relevance import BASE_FLOOR, clears_floor, quality
@@ -53,14 +51,13 @@ class WideThemeService(ThemeBasedService):
         picks = [p for p in picks if clears_floor(p, BASE_FLOOR)]
         if len(picks) >= limit:
             return picks
-        return picks + await self._top_up(picks, theme_id, content_type, profile, watched_tmdb, watched_imdb, limit)
+        return picks + await self._top_up(picks, theme_id, content_type, watched_tmdb, watched_imdb, limit)
 
     async def _top_up(
         self,
         picks: list[dict[str, Any]],
         theme_id: str,
         content_type: str,
-        profile: TasteProfile | None,
         watched_tmdb: set[int] | None,
         watched_imdb: set[str] | None,
         limit: int,
@@ -72,8 +69,7 @@ class WideThemeService(ThemeBasedService):
 
         found: dict[int, dict[str, Any]] = {}
         usable: list[dict[str, Any]] = []
-        favourites = await self._favourite_keywords(profile)
-        for params, pages in self._ladder(anchors, flavors, fallbacks, content_type, favourites):
+        for params, pages in self._ladder(anchors, flavors, fallbacks, content_type):
             for item in await self._fetch_discover_candidates(content_type, params, pages):
                 found.setdefault(item["id"], item)
             unique = filter_items_by_settings(list(found.values()), self.user_settings)
@@ -92,26 +88,15 @@ class WideThemeService(ThemeBasedService):
         )
         return filter_watched_by_imdb(enriched, watched_imdb or set())[:need]
 
-    async def _favourite_keywords(self, profile: TasteProfile | None) -> list[int]:
-        """The profile's four best keywords that say something about a title. Names come
-        from TMDB's cached keyword lookups, which the row generator has already made."""
-        if not profile:
-            return []
-        ids = [k for k, _ in profile.get_top_keywords(limit=8)]
-        details = await asyncio.gather(*(self.tmdb_service.get_keyword_details(k) for k in ids), return_exceptions=True)
-        named = [
-            k for k, d in zip(ids, details) if not isinstance(d, BaseException) and not is_meta_keyword(d.get("name"))
-        ]
-        return named[:4]
-
     def _ladder(
-        self, anchors: dict, flavors: dict, fallbacks: dict, content_type: str, favourites: list[int]
+        self, anchors: dict, flavors: dict, fallbacks: dict, content_type: str
     ) -> list[tuple[dict[str, Any], list[int]]]:
         """Queries tried in turn, each wider than the last: the same query deeper, the
-        theme's keyword joined by the profile's best ones, the anchors alone, then the
-        leading genre alone. Country and era stay on throughout; they define the row."""
+        anchors alone, then the leading genre alone. Country, era and keyword stay on
+        throughout; they define the row. A row named for a keyword never widens past it,
+        or a superhero row fills up with whatever else the profile likes."""
         axes = {**anchors, **flavors, **fallbacks}
-        kept = {name: axes[name] for name in MANDATORY_AXES if name in axes}
+        kept = {name: axes[name] for name in (*MANDATORY_AXES, "keyword") if name in axes}
         min_rating, min_votes = RecommendationFiltering.get_quality_thresholds(self.user_settings)
         # Best rated first, but only among titles with enough votes to mean something.
         best = {
@@ -124,13 +109,9 @@ class WideThemeService(ThemeBasedService):
             return {**best, **self._axes_to_params({**chosen, **kept}, content_type)}
 
         steps: list[tuple[dict[str, Any], list[int]]] = [(self._axes_to_params(axes, content_type), [4, 5, 6])]
-        if "keyword" in axes and favourites:
-            cluster = dict.fromkeys([*str(axes["keyword"]).split("-"), *map(str, favourites)])
-            genre = {"genre": anchors["genre"]} if "genre" in anchors else {}
-            steps.append((query({**genre, "keyword": "-".join(list(cluster)[:5])}), [1, 2, 3]))
         if anchors:
             steps.append((query(anchors), [1, 2, 3, 4]))
-        if "genre" in axes:
+        if "genre" in axes and "keyword" not in axes:
             steps.append((query({"genre": str(axes["genre"]).split("-")[0]}), [1, 2, 3, 4, 5]))
         return steps
 

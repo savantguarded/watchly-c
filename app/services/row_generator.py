@@ -21,6 +21,8 @@ from app.services.llm import llm_service
 from app.services.tmdb.countries import COUNTRY_ADJECTIVES
 from app.services.tmdb.genre import movie_genres, series_genres
 from app.services.tmdb.service import TMDBService, get_tmdb_service
+from app.watchly_c.seeds import today
+from app.watchly_c.theme_rotation import GENRE_POOL, rotated
 from app.watchly_c.theme_titles import KEYWORD_LINES, title_for
 
 GOLD_END = 3
@@ -282,7 +284,7 @@ class RowGeneratorService:
         Without an LLM config (user supplied no key) the rows come purely from
         the template fallback — no LLM calls are made at all.
         """
-        genres = profile.get_top_genres(limit=max(5, count + 2))
+        genres = profile.get_top_genres(limit=max(GENRE_POOL if settings.ROTATE_THEME_ROWS else 5, count + 2))
         keywords = profile.get_top_keywords(limit=max(10, 3 * count))
         countries = profile.get_top_countries(limit=2)
         runtimes = sorted(profile.runtime_bucket_scores.items(), key=lambda x: x[1], reverse=True)
@@ -291,6 +293,8 @@ class RowGeneratorService:
         # Keywords without a title line make bad rows, so only the ones with one are used.
         keyword_names = {kid: name for kid, name in keyword_names.items() if name.lower() in KEYWORD_LINES}
         keywords = [(kid, score) for kid, score in keywords if kid in keyword_names]
+        if settings.ROTATE_THEME_ROWS:
+            genres, keywords = rotated(genres, GOLD_END, today()), rotated(keywords, GOLD_END, today())
 
         # The structured path asks for exactly three rows and knows nothing of the other type's
         # rows, so with row counts and no-repeat rows the model only writes titles.

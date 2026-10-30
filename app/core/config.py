@@ -72,6 +72,7 @@ class Settings(BaseSettings):
     QUALITY_TOP_PICKS: bool = True
     DIGITAL_RELEASE_ONLY: bool = True
     FULL_ROWS: bool = True
+    ROTATE_THEME_ROWS: bool = True
     RETIRE_ALL_BASED: bool = True
     MIXED_BASE_ROWS: bool = True
     # Rows with Shuffle on keep one order for this many hours, then reshuffle. 0 is

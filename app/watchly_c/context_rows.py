@@ -9,7 +9,7 @@ from typing import Any, Literal
 
 from loguru import logger
 
-from app.core.constants import CONTEXT_LOG_KEY, DISCOVER_ONLY_EXTRA
+from app.core.constants import CONTEXT_LOG_KEY, DEFAULT_CONCURRENCY_LIMIT, DISCOVER_ONLY_EXTRA
 from app.core.settings import DEFAULT_YEAR_MIN, CatalogConfig, UserSettings
 from app.models.library import LibraryCollection, StremioLibraryItem
 from app.models.profile import TasteProfile
@@ -38,8 +38,9 @@ LOG_TTL_SECONDS = 45 * 86400
 LOG_VERSION = 3
 # Widening levels: more pages and a lower vote floor each time, only while a row is short.
 LEVELS = 3
-ANNIVERSARIES = (5, 10, 15, 20, 25, 30, 35, 40)
-ON_THIS_DAY_WINDOW_DAYS = (3, 10, 21)
+FIRST_ON_THIS_DAY_YEAR = 1960
+# Days either side of today's date: the exact day first, nearby days only while the row is short.
+ON_THIS_DAY_REACH_DAYS = (0, 1, 2)
 
 Kind = Literal["season", "moment", "evergreen"]
 # One row for the season, one for the moment, one that rotates through everything else.
@@ -61,6 +62,9 @@ class Look:
     recent_days: int | None = None
     dates: tuple[date, date] | None = None
     pages: int = 3
+    # Dates the title opened in US cinemas. TMDB's own release date is the earliest
+    # anywhere, often a festival premiere weeks before the real opening.
+    theatrical: bool = False
     # Rows are English by default; the rows about somewhere else switch it off.
     language: str | None = "en"
     extra: dict[str, Any] = field(default_factory=dict)
@@ -89,6 +93,9 @@ class Look:
         window = self.dates or ((day - timedelta(days=self.recent_days), day) if self.recent_days else None)
         if window:
             prefix = "primary_release_date" if mtype == "movie" else "first_air_date"
+            if self.theatrical:
+                prefix = "release_date"
+                params["region"], params["with_release_type"] = "US", "2|3"
             params[f"{prefix}.gte"], params[f"{prefix}.lte"] = (d.isoformat() for d in window)
         return {**params, **self.extra}
 
@@ -118,16 +125,28 @@ class Spec:
     # Always the first row of a type that can show it.
     pinned: bool = False
     max_popularity: float | None = None
+    # Titles found at a tighter level come before ones that only a wider level found.
+    nearest_first: bool = False
 
 
 async def _on_this_day(service: "ContextRowService", plan: Plan) -> tuple[Look, ...]:
-    """Titles released around today's date 5, 10, 15 ... 40 years ago, most voted first."""
-    reach = timedelta(days=ON_THIS_DAY_WINDOW_DAYS[plan.level])
+    """Titles that opened in US cinemas on today's date in any year since 1960, most voted first."""
+    reach = timedelta(days=ON_THIS_DAY_REACH_DAYS[plan.level])
     looks = []
-    for years in ANNIVERSARIES:
-        # Feb 29 has no anniversary in most years; the 28th is close enough for a window.
-        anniversary = date(plan.day.year - years, plan.day.month, min(plan.day.day, 28))
-        looks.append(Look(dates=(anniversary - reach, anniversary + reach), sort="vote_count.desc", votes=300, pages=1))
+    for year in range(FIRST_ON_THIS_DAY_YEAR, plan.day.year):
+        try:
+            anniversary = plan.day.replace(year=year)
+        except ValueError:
+            anniversary = date(year, 2, 28)
+        looks.append(
+            Look(
+                dates=(anniversary - reach, anniversary + reach),
+                sort="vote_count.desc",
+                votes=300,
+                pages=1,
+                theatrical=True,
+            )
+        )
     return tuple(looks)
 
 
@@ -281,7 +300,15 @@ SPECS: tuple[Spec, ...] = (
             "series": (Look(genres="35|18", votes=500, rating=7.3),),
         },
     ),
-    Spec("on_this_day", "moment", "On This Day, {day} {month}", types=("movie",), build=_on_this_day, pinned=True),
+    Spec(
+        "on_this_day",
+        "moment",
+        "On This Day, {day} {month}",
+        types=("movie",),
+        build=_on_this_day,
+        pinned=True,
+        nearest_first=True,
+    ),
     Spec(
         "late_night",
         "evergreen",
@@ -447,26 +474,35 @@ class ContextRowService:
         excluded = RecommendationFiltering.get_excluded_genre_ids(self.user_settings, content_type)
 
         found: dict[int, dict[str, Any]] = {}
+        level_found: dict[int, int] = {}
         usable: list[dict[str, Any]] = []
+        slots = asyncio.Semaphore(DEFAULT_CONCURRENCY_LIMIT)
+
+        async def discover(params: dict[str, Any], page: int) -> dict[str, Any]:
+            async with slots:
+                return await self.tmdb_service.get_discover(mtype, page=page, **params)
+
         for level in range(LEVELS):
             plan = Plan(mtype, day, arg or None, level, profile)
-            for look in await self._looks(spec, content_type, plan):
-                keyword_ids = await self._keyword_ids(look.keywords)
-                if look.keywords and not keyword_ids:
+            looks = await self._looks(spec, content_type, plan)
+            keyword_ids = await asyncio.gather(*(self._keyword_ids(look.keywords) for look in looks))
+            calls = []
+            for look, ids in zip(looks, keyword_ids):
+                if look.keywords and not ids:
                     continue
-                params = look.params(mtype, level, spec.floor, day, keyword_ids)
+                params = look.params(mtype, level, spec.floor, day, ids)
                 # Single-page looks (On This Day's windows) widen by date instead.
                 pages = range(1, look.pages + (2 * level if look.pages > 1 else 0) + 1)
-                results = await asyncio.gather(
-                    *(self.tmdb_service.get_discover(mtype, page=p, **params) for p in pages), return_exceptions=True
-                )
-                for result in results:
-                    if isinstance(result, BaseException):
-                        logger.warning(f"Discover for {key} failed: {type(result).__name__}")
-                        continue
-                    for item in result.get("results", []):
-                        if item.get("id"):
-                            found.setdefault(item["id"], item)
+                calls.extend(discover(params, p) for p in pages)
+            results = await asyncio.gather(*calls, return_exceptions=True)
+            for result in results:
+                if isinstance(result, BaseException):
+                    logger.warning(f"Discover for {key} failed: {type(result).__name__}")
+                    continue
+                for item in result.get("results", []):
+                    if item.get("id"):
+                        found.setdefault(item["id"], item)
+                        level_found.setdefault(item["id"], level)
             unique = filter_items_by_settings(list(found.values()), self.user_settings, apply_quality_band=False)
             usable = [
                 i
@@ -477,7 +513,9 @@ class ContextRowService:
             if len(usable) >= row_size(limit):
                 break
 
-        usable.sort(key=lambda i: self._score(i, profile, mtype), reverse=True)
+        usable.sort(
+            key=lambda i: (level_found[i["id"]] if spec.nearest_first else 0, -self._score(i, profile, mtype))
+        )
         enriched = await RecommendationMetadata.fetch_batch(
             self.tmdb_service, usable[: row_size(limit)], content_type, user_settings=self.user_settings
         )

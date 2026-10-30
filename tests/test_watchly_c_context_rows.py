@@ -230,6 +230,61 @@ def test_on_this_day_is_for_movies_only():
     assert "on_this_day" not in keys(["series"], at("2026-04-14"), count=6)
 
 
+def on_this_day(monkeypatch, tmdb, today_: date) -> list[dict]:
+    monkeypatch.setattr(context_rows.RecommendationMetadata, "fetch_batch", fake_fetch_batch)
+    monkeypatch.setattr(context_rows, "today", lambda: today_)
+    service = ContextRowService(tmdb, get_default_settings())
+    return asyncio.run(service.get_recommendations(f"{CONTEXT_PREFIX}on_this_day", "movie", None, set(), set(), 20))
+
+
+def test_on_this_day_asks_for_the_exact_us_opening_day_of_every_year_since_1960(monkeypatch):
+    tmdb = FakeTMDB()
+
+    async def plenty(media_type, page=1, **kwargs):
+        tmdb.calls.append(kwargs)
+        return {"results": [result(len(tmdb.calls) * 100 + n) for n in range(20)]}
+
+    tmdb.get_discover = plenty
+    on_this_day(monkeypatch, tmdb, date(2026, 10, 30))
+
+    first = tmdb.calls[:66]
+    assert sorted(c["release_date.gte"] for c in first) == [f"{y}-10-30" for y in range(1960, 2026)]
+    assert all(c["release_date.gte"] == c["release_date.lte"] for c in first)
+    assert all(c["region"] == "US" and c["with_release_type"] == "2|3" for c in first)
+    assert not any("primary_release_date.gte" in c for c in tmdb.calls)
+    assert len(tmdb.calls) == 66
+
+
+def test_on_this_day_widens_by_a_day_only_when_the_exact_day_is_short(monkeypatch):
+    tmdb = FakeTMDB()
+
+    async def discover(media_type, page=1, **kwargs):
+        tmdb.calls.append(kwargs)
+        exact = kwargs["release_date.gte"] == kwargs["release_date.lte"]
+        year = int(kwargs["release_date.gte"][:4])
+        if exact:
+            return {"results": [result(year * 10, avg=7.0)] if year < 1970 else []}
+        return {"results": [result(year * 10 + 1, avg=9.0)]}
+
+    tmdb.get_discover = discover
+    out = on_this_day(monkeypatch, tmdb, date(2026, 10, 30))
+
+    ids = [m["_tmdb_id"] for m in out]
+    exact_ids = {y * 10 for y in range(1960, 1970)}
+    assert set(ids[: len(exact_ids)]) == exact_ids
+    assert len(ids) > len(exact_ids)
+    spans = {(c["release_date.gte"], c["release_date.lte"]) for c in tmdb.calls if c["release_date.gte"][:4] == "2000"}
+    assert ("2000-10-30", "2000-10-30") in spans and ("2000-10-29", "2000-10-31") in spans
+
+
+def test_on_this_day_on_leap_day_uses_the_28th_in_years_without_one(monkeypatch):
+    tmdb = FakeTMDB()
+    on_this_day(monkeypatch, tmdb, date(2028, 2, 29))
+
+    days = {c["release_date.gte"] for c in tmdb.calls[:68]}
+    assert "1961-02-28" in days and "1964-02-29" in days
+
+
 def test_rows_ask_tmdb_for_english_unless_they_are_about_somewhere_else():
     tmdb = FakeTMDB()
     monkeypatched = ContextRowService(tmdb, get_default_settings())

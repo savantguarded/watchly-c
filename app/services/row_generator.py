@@ -122,7 +122,9 @@ def _build_core_row(
     title_parts.append(_genre_name(g[0], content_type))
     used_genres.add(g[0])
 
-    for _ in range(random.randint(1, 2)):
+    # A second keyword shares the first one's (role, axis) pair, and the row id keeps only the
+    # last of them while the title is written from the first. Wide rows use one.
+    for _ in range(1 if settings.WIDE_THEME_ROWS else random.randint(1, 2)):
         k = _pick(keywords, 0, GOLD_END + reach, used_keywords)
         if k and k[0] in keyword_names:
             axes.append((ROLE_FLAVOR, AXIS_KEYWORD, k[0]))

@@ -37,3 +37,19 @@ def test_rows_anchor_on_more_than_the_top_three_genres_across_a_week(monkeypatch
         )
         anchored |= {axes[0][2] for axes, _ in rows}
     assert len(anchored) > 3
+
+
+def test_a_row_names_one_keyword_and_queries_that_same_keyword():
+    from app.watchly_c.theme_titles import KEYWORD_LINES, title_for
+
+    genres = [(28, 9.0), (35, 8.0), (18, 7.0)]
+    keywords = [(1, 9.0), (2, 8.0), (3, 7.0)]
+    names = {1: "based on comic", 2: "dark comedy", 3: "heist"}
+
+    for _ in range(60):
+        rows = build_fallback_rows(genres, keywords, [], [], names, "movie", count=3)
+        for axes, title in rows:
+            used = [value for _, kind, value in axes if kind == "k"]
+            assert len(used) <= 1
+            if used:
+                assert title == title_for(axes, names) == KEYWORD_LINES[names[used[0]]]

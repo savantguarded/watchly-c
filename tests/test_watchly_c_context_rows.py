@@ -316,6 +316,31 @@ def test_on_this_day_on_leap_day_uses_the_28th_in_years_without_one(monkeypatch)
     assert "1961-02-28" in days and "1964-02-29" in days
 
 
+def popularity_rows(monkeypatch, popularity: str, key: str) -> set[int]:
+    tmdb = FakeTMDB()
+    thin = result(1, avg=8.0, votes=120)
+    solid = result(2, avg=7.6, votes=900)
+
+    async def discover(media_type, page=1, **kwargs):
+        return {"results": [thin, solid]}
+
+    tmdb.get_discover = discover
+    monkeypatch.setattr(context_rows.RecommendationMetadata, "fetch_batch", fake_fetch_batch)
+    monkeypatch.setattr(context_rows, "today", lambda: date(2026, 10, 27))
+    service = ContextRowService(tmdb, get_default_settings().model_copy(update={"popularity": popularity}))
+    out = asyncio.run(service.get_recommendations(f"{CONTEXT_PREFIX}{key}", "movie", None, set(), set(), 20))
+    return {m["_tmdb_id"] for m in out}
+
+
+def test_the_popularity_setting_applies_to_contextual_rows(monkeypatch):
+    assert popularity_rows(monkeypatch, "balanced", "spooky") == {2}
+    assert popularity_rows(monkeypatch, "all", "spooky") == {1, 2}
+
+
+def test_the_rows_about_titles_with_few_votes_ignore_it(monkeypatch):
+    assert popularity_rows(monkeypatch, "balanced", "african") == {1, 2}
+
+
 def test_rows_ask_tmdb_for_english_unless_they_are_about_somewhere_else():
     tmdb = FakeTMDB()
     monkeypatched = ContextRowService(tmdb, get_default_settings())

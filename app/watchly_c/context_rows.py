@@ -127,6 +127,8 @@ class Spec:
     max_popularity: float | None = None
     # Titles found at a tighter level come before ones that only a wider level found.
     nearest_first: bool = False
+    # TMDB holds few votes for these titles, so the popularity setting's vote floor would empty the row.
+    ignores_popularity: bool = False
 
 
 async def _on_this_day(service: "ContextRowService", plan: Plan) -> tuple[Look, ...]:
@@ -272,6 +274,7 @@ SPECS: tuple[Spec, ...] = (
         window=((10, 1), (10, 31)),
         # TMDB holds few votes for most African titles, so a vote floor of 100 would empty the row.
         min_votes=15,
+        ignores_popularity=True,
     ),
     Spec(
         "weekend",
@@ -518,6 +521,7 @@ SPECS: tuple[Spec, ...] = (
         },
         floor=6.0,
         min_votes=5,
+        ignores_popularity=True,
     ),
 )
 SPEC_BY_KEY = {s.key: s for s in SPECS}
@@ -700,7 +704,9 @@ class ContextRowService:
                     if item.get("id"):
                         found.setdefault(item["id"], item)
                         level_found.setdefault(item["id"], level)
-            unique = filter_items_by_settings(list(found.values()), self.user_settings, apply_quality_band=False)
+            unique = filter_items_by_settings(
+                list(found.values()), self.user_settings, apply_quality_band=not spec.ignores_popularity
+            )
             usable = [
                 i
                 for i in filter_by_genres(unique, watched_tmdb, excluded)

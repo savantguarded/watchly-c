@@ -144,13 +144,19 @@ class FakeTMDB:
     async def get_movie_details(self, tmdb_id):
         if self.fail:
             raise RuntimeError("tmdb down")
-        return {"genres": [{"id": 28}, {"id": 18}, {"id": 27}], "keywords": {"keywords": [{"id": 9}, {"id": 10}]}}
+        return {
+            "genres": [{"id": 28}, {"id": 18}, {"id": 27}],
+            "keywords": {"keywords": [{"id": 9, "name": "giant monster"}, {"id": 10, "name": "military"}]},
+        }
+
+    async def get_tv_details(self, tmdb_id):
+        # 2 shares both telling keywords, 5 only a stock tag.
+        keywords = {2: [9, 10], 5: [77]}.get(tmdb_id, [9])
+        return {"id": tmdb_id, "genres": [], "keywords": {"results": [{"id": k} for k in keywords]}}
 
     async def get_discover(self, media_type, with_genres=None, sort_by="popularity.desc", page=1, **kwargs):
         self.discovers.append((media_type, with_genres, kwargs.get("with_keywords")))
-        if kwargs.get("with_keywords"):
-            return {"results": [discovered(1), discovered(2), discovered(3)]}
-        return {"results": [discovered(3), discovered(4)]}
+        return {"results": [discovered(1), discovered(2), discovered(3), discovered(5)]}
 
 
 async def fake_fetch_batch(tmdb_service, items, media_type, user_settings=None):
@@ -187,12 +193,15 @@ def test_cross_type_picks_come_from_the_seeds_keywords_and_mapped_genres(patched
     out, service = run_mixed(get_default_settings(), tmdb)
 
     assert service.calls == [("tt1", "movie")]
-    # Action maps to Action & Adventure; Horror has no series partner.
-    assert ("series", "10759,18", None) in tmdb.discovers
+    # The telling keywords, together, apart, and within Action mapped to Action & Adventure.
     assert ("series", None, "9|10") in tmdb.discovers
+    assert ("series", None, "9,10") in tmdb.discovers
+    assert ("series", "10759", "9") in tmdb.discovers
+    assert all(keywords for _, _, keywords in tmdb.discovers)
     series = [m["id"] for m in out if m["type"] == "series"]
-    # Matching on both keywords and genres leads.
-    assert series[0] == "tt9003"
+    # The closest match leads, and a title tied by nothing telling never shows.
+    assert series[0] == "tt9002"
+    assert "tt9005" not in series
     assert [m["type"] for m in out] == ["movie", "movie", "series"] * 3
 
 
@@ -234,8 +243,7 @@ def test_watched_titles_of_the_other_type_are_dropped_before_the_cut(patched, mo
     monkeypatch.setattr(mixed_rows, "watched_tmdb_ids", watched)
     out, _ = run_mixed(get_default_settings(), FakeTMDB())
 
-    assert "tt9003" not in {m["id"] for m in out}
-    assert [m["id"] for m in out if m["type"] == "series"][0] == "tt9001"
+    assert {m["id"] for m in out if m["type"] == "series"} == {"tt9001", "tt9002"}
 
 
 def test_a_short_seed_pool_still_declares_every_slot_and_maps_only_the_filled_ones():
@@ -255,7 +263,7 @@ class WarShipTMDB(FakeTMDB):
         return {
             "genres": [{"id": 28}, {"id": 80}, {"id": 18}, {"id": 10752}],
             "original_language": "en",
-            "keywords": {"keywords": [{"id": 9}]},
+            "keywords": {"keywords": [{"id": 9, "name": "submarine"}]},
         }
 
     async def get_discover(self, media_type, with_genres=None, sort_by="popularity.desc", page=1, **kwargs):
@@ -265,6 +273,18 @@ class WarShipTMDB(FakeTMDB):
         if kwargs.get("with_keywords"):
             return {"results": [show(1, [18, 10765]), show(2, [10759, 80]), show(3, [10759, 80], "ko")]}
         return {"results": []}
+
+
+def test_a_seed_with_no_telling_keyword_gets_no_cross_type_cards(patched):
+    class StockTagsOnly(FakeTMDB):
+        async def get_movie_details(self, tmdb_id):
+            return {"genres": [{"id": 28}], "keywords": {"keywords": [{"id": 77, "name": "murder"}]}}
+
+    tmdb = StockTagsOnly()
+    out, _ = run_mixed(get_default_settings(), tmdb)
+
+    assert tmdb.discovers == []
+    assert all(m["type"] == "movie" for m in out)
 
 
 def test_cross_type_picks_must_share_one_of_the_seeds_leading_genres_and_its_language(patched):

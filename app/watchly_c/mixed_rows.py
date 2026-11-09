@@ -19,11 +19,19 @@ from app.services.recommendation.filtering import (
 )
 from app.services.recommendation.item_based import ItemBasedService
 from app.services.recommendation.metadata import RecommendationMetadata
-from app.services.recommendation.utils import resolve_tmdb_id
+from app.services.recommendation.utils import content_type_to_mtype, resolve_tmdb_id
 from app.services.tmdb.genre import movie_genres, series_genres
 from app.services.tmdb.service import TMDBService
-from app.watchly_c.fit import fits_seed
-from app.watchly_c.relevance import clears_floor, has_off_topic, language_ok, quality, rating_floor
+from app.watchly_c.relevance import (
+    Seed,
+    by_match,
+    clears_floor,
+    details_for,
+    has_off_topic,
+    language_ok,
+    quality,
+    rating_floor,
+)
 from app.watchly_c.row_slots import fill_slots
 from app.watchly_c.seeds import choose_seeds, rating_of
 from app.watchly_c.watched_tmdb import watched_tmdb_ids
@@ -37,6 +45,7 @@ MIXED_ITEM_PREFIX = "watchly.item.mix."
 OTHER_TYPE = {"movie": "series", "series": "movie"}
 # Every third card in a row comes from the other type.
 CROSS_EVERY = 3
+CROSS_KEYWORDS = 6
 
 _SHARED_GENRES = {gid: [gid] for gid in movie_genres.keys() & series_genres.keys()}
 # TMDB splits genres differently per type; these are the ones with a clear partner.
@@ -194,8 +203,9 @@ async def _cross_type(
     claimed: set[int],
     seed_rating: float | None,
 ) -> list[dict[str, Any]]:
-    """Titles of the other type found through TMDB discover on the seed's keywords
-    and its genres, mapped across. Those matching on both lead."""
+    """Titles of the other type found through TMDB discover on the seed's telling keywords,
+    alone and within its leading genre (mapped across), and kept only when their details tie
+    them to the seed. With nothing telling to go on there are no cross-type cards."""
     tmdb_id = await resolve_tmdb_id(seed_id, tmdb_service)
     if not tmdb_id:
         return []
@@ -203,26 +213,25 @@ async def _cross_type(
         details = await tmdb_service.get_movie_details(tmdb_id)
     else:
         details = await tmdb_service.get_tv_details(tmdb_id)
+    seed = Seed.from_details(details)
 
     other = OTHER_TYPE[seed_type]
+    other_mtype = content_type_to_mtype(other)
     genre_map = MOVIE_TO_SERIES_GENRES if seed_type == "movie" else SERIES_TO_MOVIE_GENRES
-    genres = list(dict.fromkeys(g for genre in details.get("genres", []) for g in genre_map.get(genre["id"], [])))
-    keyword_block = details.get("keywords") or {}
-    keywords = [k["id"] for k in (keyword_block.get("keywords") or keyword_block.get("results") or [])][:6]
-    if not genres and not keywords:
+    genres = list(dict.fromkeys(g for genre in seed.genres for g in genre_map.get(genre, [])))
+    telling = [str(k) for k in seed.telling[:CROSS_KEYWORDS]]
+    if not telling:
         return []
 
     excluded = RecommendationFiltering.get_excluded_genre_ids(user_settings, other)
     params = apply_discover_filters({"without_genres": "|".join(map(str, excluded))} if excluded else {}, user_settings)
     sort_by = RecommendationFiltering.get_sort_by_preference(user_settings)
 
-    queries = []
-    if keywords:
-        queries.append({"with_keywords": "|".join(map(str, keywords))})
+    queries = [{"with_keywords": "|".join(telling)}]
+    if len(telling) >= 2:
+        queries.append({"with_keywords": ",".join(telling[:2])})
     if genres:
-        # The seed's two leading genres together, which keeps a drama/crime seed
-        # from matching every drama.
-        queries.append({"with_genres": ",".join(map(str, genres[:2]))})
+        queries += [{"with_keywords": k, "with_genres": str(genres[0])} for k in telling[:3]]
     results = await asyncio.gather(
         *(tmdb_service.get_discover(other, sort_by=sort_by, page=1, **params, **q) for q in queries),
         return_exceptions=True,
@@ -244,8 +253,7 @@ async def _cross_type(
     ranked = filter_by_genres(filter_items_by_settings(ranked, user_settings), watched_other | claimed, excluded)
     if settings.RELEVANCE_RANKING:
         floor = rating_floor(seed_rating)
-        # A keyword match alone isn't enough: the title must share one of the two leading
-        # genres the discover query itself was built on, or a war film gets a vampire drama.
+        # The title must share one of the two leading genres, or a war film gets a vampire drama.
         lead = set(genres[:2])
         ranked = [
             i
@@ -253,12 +261,11 @@ async def _cross_type(
             if clears_floor(i, floor)
             and not has_off_topic(i.get("genre_ids") or (), genres)
             and (not i.get("genre_ids") or lead & set(i["genre_ids"]))
-            and language_ok(i, details.get("original_language"))
+            and language_ok(i, seed.language)
         ]
         ranked.sort(key=lambda i: (-hits[i["id"]], -quality(i, other)))
-    # Over-fetch for what the watched filter takes out; truncate before the costly enrichment.
-    enriched = await RecommendationMetadata.fetch_batch(tmdb_service, ranked[: count * 2], other, user_settings)
-    if settings.FIT_GATE:
-        all_keywords = {k["id"] for k in (keyword_block.get("keywords") or keyword_block.get("results") or [])}
-        enriched = [i for i in enriched if fits_seed(i, set(genres), all_keywords)]
+    shortlist = ranked[: count * 3]
+    matched = by_match(shortlist, await details_for(tmdb_service, shortlist, other_mtype), seed, other_mtype, genres)
+    # Over-fetch for what the watched filter takes out; details are cached, so this costs the images only.
+    enriched = await RecommendationMetadata.fetch_batch(tmdb_service, matched[: count * 2], other, user_settings)
     return filter_watched_by_imdb(enriched, library.all_imdb_ids() | watched_imdb)[:count]

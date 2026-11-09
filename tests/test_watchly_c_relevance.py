@@ -79,34 +79,59 @@ def test_rows_are_asked_for_more_than_they_show():
     assert row_size(20) > 20
 
 
+HEIST, MURDER, BANK_ROBBERY, DIRECTOR = 1, 2, 4, 500
+
+
+def details(tmdb_id: int, genres=(53, 18), keywords=(), crew=(), cast=(), collection=None) -> dict:
+    return {
+        "id": tmdb_id,
+        "genres": [{"id": g} for g in genres],
+        "original_language": "en",
+        "release_date": "2015-01-01",
+        "keywords": {
+            "keywords": [{"id": k, "name": {HEIST: "heist", MURDER: "murder"}.get(k, f"kw{k}")} for k in keywords]
+        },
+        "credits": {
+            "crew": [{"id": c, "job": "Director"} for c in crew],
+            "cast": [{"id": c, "order": n} for n, c in enumerate(cast)],
+        },
+        "belongs_to_collection": {"id": collection} if collection else None,
+    }
+
+
 class FakeTMDB:
-    def __init__(self, recs: list[dict], discover: list[dict]):
+    """TMDB for a heist-thriller seed (id 100). Candidates are tied to it by a heist
+    keyword unless `facts` says otherwise."""
+
+    def __init__(self, recs: list[dict], discover: list[dict] | None = None, facts=None, similar=(), neighbour=()):
         self.recs = recs
-        self.discover = discover
+        self.discover = discover or []
+        self.facts = facts or {}
+        self.similar = list(similar)
+        self.neighbour = list(neighbour)
         self.discovers: list[dict] = []
+        self.rec_calls: list[int] = []
 
     async def find_by_imdb_id(self, imdb_id):
         return 100, "movie"
 
     async def get_movie_details(self, tmdb_id):
-        return {
-            "genres": [{"id": 53}, {"id": 18}],
-            "original_language": "en",
-            "release_date": "2015-01-01",
-            "keywords": {"keywords": [{"id": 1}]},
-        }
+        if tmdb_id == 100:
+            return details(100, keywords=(HEIST, MURDER, BANK_ROBBERY), crew=(DIRECTOR,), cast=(1, 2, 3), collection=9)
+        return self.facts.get(tmdb_id) or details(tmdb_id, keywords=(HEIST,))
 
     async def get_recommendations(self, tmdb_id, media_type, page=1):
+        self.rec_calls.append(tmdb_id)
+        if tmdb_id != 100:
+            return {"results": self.neighbour if page == 1 else []}
         return {"results": self.recs if page == 1 else []}
 
     async def get_similar(self, tmdb_id, media_type, page=1):
-        return {"results": []}
+        return {"results": self.similar if page == 1 else []}
 
     async def get_discover(self, media_type, page=1, **kwargs):
         self.discovers.append(kwargs)
-        if kwargs.get("sort_by") == "vote_average.desc":
-            return {"results": self.discover if page == 1 else []}
-        return {"results": []}
+        return {"results": self.discover if page == 1 else []}
 
 
 async def fake_fetch_batch(tmdb_service, items, media_type, user_settings=None):
@@ -118,31 +143,69 @@ async def fake_fetch_batch(tmdb_service, items, media_type, user_settings=None):
 def serve(monkeypatch, tmdb: FakeTMDB, seed_rating=None, limit=20):
     monkeypatch.setattr(relevance.RecommendationMetadata, "fetch_batch", fake_fetch_batch)
     service = RankedItemService(tmdb, get_default_settings())
-    return asyncio.run(
+    out = asyncio.run(
         service.get_recommendations_for_item("tt1", "movie", set(), set(), limit=limit, seed_rating=seed_rating)
     )
+    return [m["_tmdb_id"] for m in out]
 
 
 def test_poor_titles_never_reach_the_row_and_the_seed_itself_is_skipped(monkeypatch):
     recs = [title(100), title(11), title(12, avg=5.5)]
 
-    out = serve(monkeypatch, FakeTMDB(recs, []), limit=5)
-
-    assert [m["_tmdb_id"] for m in out] == [11]
-
-
-def test_a_short_row_is_widened_with_best_rated_discover_results(monkeypatch):
-    tmdb = FakeTMDB([title(11)], [title(n) for n in range(200, 230)])
-
-    out = serve(monkeypatch, tmdb, limit=20)
-
-    assert len(out) >= 20
-    assert any(call.get("with_genres") == "53,18" for call in tmdb.discovers)
+    assert serve(monkeypatch, FakeTMDB(recs), limit=5) == [11]
 
 
 def test_a_strong_seed_keeps_only_better_titles(monkeypatch):
     recs = [title(11, avg=6.8), title(12, avg=7.8)]
 
-    out = serve(monkeypatch, FakeTMDB(recs, []), seed_rating=9.0, limit=5)
+    assert serve(monkeypatch, FakeTMDB(recs), seed_rating=9.0, limit=5) == [12]
 
-    assert [m["_tmdb_id"] for m in out] == [12]
+
+def test_a_title_sharing_only_genres_and_a_stock_tag_is_filler(monkeypatch):
+    recs = [title(11), title(12), title(13), title(14), title(15)]
+    facts = {
+        12: details(12, keywords=(MURDER,)),
+        13: details(13, crew=(DIRECTOR,)),
+        14: details(14, collection=9),
+        15: details(15, keywords=(77,)),
+    }
+
+    assert sorted(serve(monkeypatch, FakeTMDB(recs, facts=facts), limit=10)) == [11, 13, 14]
+
+
+def test_tmdb_tying_a_title_closely_counts_when_it_shares_the_genres_and_a_tag(monkeypatch):
+    recs = [title(11), title(12)]
+    facts = {11: details(11, keywords=(MURDER,)), 12: details(12, genres=(53, 35), keywords=(MURDER,))}
+
+    out = serve(monkeypatch, FakeTMDB(recs, facts=facts, similar=[title(11), title(12)]), limit=10)
+
+    assert out == [11]
+
+
+def test_the_closer_match_leads_even_when_rated_lower(monkeypatch):
+    recs = [title(11, avg=8.4), title(12, avg=7.1)]
+    facts = {12: details(12, keywords=(HEIST, BANK_ROBBERY), crew=(DIRECTOR,))}
+
+    assert serve(monkeypatch, FakeTMDB(recs, facts=facts), limit=10) == [12, 11]
+
+
+def test_the_closest_neighbours_lend_their_own_recommendations(monkeypatch):
+    tmdb = FakeTMDB([title(11)], similar=[title(11)], neighbour=[title(21), title(22)])
+
+    out = serve(monkeypatch, tmdb, limit=10)
+
+    assert 11 in tmdb.rec_calls
+    assert {21, 22} <= set(out)
+
+
+def test_a_short_row_widens_only_by_keyword_within_the_lead_genre(monkeypatch):
+    tmdb = FakeTMDB([title(11)], discover=[title(n) for n in range(200, 205)])
+
+    out = serve(monkeypatch, tmdb, limit=20)
+
+    assert {200, 201} <= set(out)
+    widenings = [c for c in tmdb.discovers if c.get("sort_by") == "vote_count.desc"]
+    assert widenings and all(
+        c["with_keywords"] in (str(HEIST), str(BANK_ROBBERY)) and c["with_genres"] == "53" for c in widenings
+    )
+    assert all(c.get("with_keywords") for c in tmdb.discovers)

@@ -1,4 +1,4 @@
-from app.watchly_c.fit import fits_seed, fits_theme, theme_axis_ids
+from app.watchly_c.fit import fits_seed
 from app.watchly_c.relevance import Seed
 
 ACTION, SCIFI, CRIME, THRILLER, DRAMA, MYSTERY, COMEDY = 28, 878, 80, 53, 18, 9648, 35
@@ -30,23 +30,3 @@ def test_rashomon_is_not_in_an_alien_row():
 def test_a_one_genre_seed_needs_that_genre():
     assert fits_seed(title([COMEDY, DRAMA]), {COMEDY}, set())
     assert not fits_seed(title([DRAMA]), {COMEDY}, set())
-
-
-def test_the_sopranos_is_not_in_a_superhero_row():
-    sopranos = title([CRIME, DRAMA], [3])
-    assert not fits_theme(sopranos, {SUPERHERO}, {ACTION})
-    assert fits_theme(title([ACTION], [SUPERHERO]), {SUPERHERO}, {ACTION})
-
-
-def test_the_office_is_not_in_a_comic_row():
-    assert not fits_theme(title([COMEDY], [4]), {COMIC}, {COMEDY})
-
-
-def test_a_row_without_a_keyword_needs_one_of_its_genres():
-    assert fits_theme(title([COMEDY]), set(), {COMEDY, DRAMA})
-    assert not fits_theme(title([ACTION]), set(), {COMEDY, DRAMA})
-
-
-def test_axis_ids_split_the_row_values():
-    assert theme_axis_ids({"keyword": "9715-9717", "genre": "28", "country": "US"}) == ({9715, 9717}, {28})
-    assert theme_axis_ids({"era": "1990"}) == (set(), set())

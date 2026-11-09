@@ -1,7 +1,10 @@
+import asyncio
 import itertools
 import math
+import random
 import re
 from collections.abc import Awaitable, Callable
+from dataclasses import dataclass
 from typing import Any
 
 from loguru import logger
@@ -16,25 +19,166 @@ from app.services.recommendation.filtering import (
     filter_watched_by_imdb,
 )
 from app.services.recommendation.metadata import RecommendationMetadata
+from app.services.recommendation.scoring import RecommendationScoring
 from app.services.recommendation.theme_based import ThemeBasedService
 from app.services.recommendation.utils import content_type_to_mtype
 from app.services.row_generator import RowDefinition
-from app.watchly_c.fit import fits_theme, theme_axis_ids
+from app.watchly_c.fit import keyword_ids
 from app.watchly_c.mixed_context import TypeState, blend
 from app.watchly_c.mixed_rows import MOVIE_TO_SERIES_GENRES, OTHER_TYPE, SERIES_TO_MOVIE_GENRES
-from app.watchly_c.relevance import BASE_FLOOR, clears_floor, quality
+from app.watchly_c.relevance import BASE_FLOOR, clears_floor, language_ok, quality
 from app.watchly_c.row_slots import fill_slots
+from app.watchly_c.seeds import today
 
-MANDATORY_AXES = ("country", "era")
+# Each discover query is read in two orders, so a row draws on the well-known titles of
+# its theme and the best-rated ones alike.
+SORTS = ("vote_count.desc", "vote_average.desc")
+PAGES = [1, 2, 3]
+# A row picks from this many times its length of the best-scored candidates. The day picks
+# the order, so a theme that comes back doesn't come back with the same titles.
+CHOICE_DEPTH = 3
+# Raised to sharpen the draw toward the better-scored titles while still varying it.
+SHARPNESS = 4
+
+
+@dataclass(frozen=True)
+class ThemeAxes:
+    """A row's filters. Every genre group must match (a group is one genre, or the genres a
+    genre maps to in the other type); stock merged the row's roles into one dict, so a
+    "Crime Drama" row lost one of its two genres."""
+
+    genre_groups: tuple[frozenset[int], ...]
+    keywords: frozenset[int]
+    rest: dict[str, str]
+
+    @classmethod
+    def parse(cls, theme_id: str) -> "ThemeAxes":
+        genres: list[int] = []
+        keywords: set[int] = set()
+        rest: dict[str, str] = {}
+        for part in theme_id.removeprefix("watchly.theme.").split("."):
+            _, _, value = part.partition(":")
+            if value.startswith("ct"):
+                rest["country"] = value[2:]
+            elif value.startswith("cr"):
+                continue
+            elif value.startswith("g"):
+                genres += [int(v) for v in value[1:].split("-") if v.isdigit()]
+            elif value.startswith("k"):
+                keywords |= {int(v) for v in value[1:].split("-") if v.isdigit()}
+            elif value.startswith("y"):
+                rest["era"] = value[1:]
+            elif value.startswith("r"):
+                rest["runtime"] = value[1:]
+        return cls(tuple(frozenset({g}) for g in dict.fromkeys(genres)), frozenset(keywords), rest)
+
+    def across(self, native: str) -> "ThemeAxes":
+        """The same row for the other type: genres mapped across, a group with no partner
+        dropped, and no runtime, which doesn't carry between films and episodes."""
+        table = MOVIE_TO_SERIES_GENRES if native == "movie" else SERIES_TO_MOVIE_GENRES
+        groups = tuple(
+            mapped for group in self.genre_groups if (mapped := frozenset(g for v in group for g in table.get(v, [])))
+        )
+        return ThemeAxes(groups, self.keywords, {k: v for k, v in self.rest.items() if k != "runtime"})
+
+    def is_empty(self) -> bool:
+        return not (self.genre_groups or self.keywords or self.rest)
+
+    def params(self, service: ThemeBasedService, content_type: str, with_runtime: bool = True) -> dict[str, Any]:
+        params = service._axes_to_params(
+            {k: v for k, v in self.rest.items() if with_runtime or k != "runtime"}, content_type
+        )
+        single = [str(next(iter(g))) for g in self.genre_groups if len(g) == 1]
+        if single:
+            params["with_genres"] = ",".join(single)
+        elif self.genre_groups:
+            params["with_genres"] = "|".join(map(str, sorted(self.genre_groups[0])))
+        if self.keywords:
+            params["with_keywords"] = "|".join(map(str, sorted(self.keywords)))
+        return params
+
+    def matches(self, item: dict[str, Any]) -> bool:
+        """Genres from the compact shape; the keyword is the query's own."""
+        genres = set(item.get("genre_ids") or ())
+        return all(group & genres for group in self.genre_groups)
+
+    def fits(self, item: dict[str, Any]) -> bool:
+        """Once details load: the row's keyword is on the title and every genre group is."""
+        return (not self.keywords or bool(keyword_ids(item) & self.keywords)) and self.matches(item)
+
+
+def day_order(items: list[dict[str, Any]], row_key: str, score: Callable[[dict[str, Any]], float]):
+    """A weighted draw without replacement, seeded by the row and the day: better-scored
+    titles still tend to lead, but which ones lead changes from one day to the next."""
+    rng = random.Random(f"{row_key}|{today().isoformat()}")
+    keys = {i["id"]: rng.random() ** (1 / max(score(i), 0.01) ** SHARPNESS) for i in items}
+    return sorted(items, key=lambda i: keys[i["id"]], reverse=True)
+
+
+async def theme_picks(
+    service: ThemeBasedService,
+    axes: ThemeAxes,
+    row_key: str,
+    content_type: str,
+    profile: TasteProfile | None,
+    watched_tmdb: set[int],
+    watched_imdb: set[str],
+    limit: int,
+) -> list[dict[str, Any]]:
+    """Titles matching every filter of the row, held to the rating floor. Only the runtime
+    is ever relaxed; a row that runs out of titles stays short."""
+    excluded = RecommendationFiltering.get_excluded_genre_ids(service.user_settings, content_type)
+    mtype = content_type_to_mtype(content_type)
+    found: dict[int, dict[str, Any]] = {}
+    usable: list[dict[str, Any]] = []
+    for with_runtime in (True, False) if "runtime" in axes.rest else (True,):
+        base = axes.params(service, content_type, with_runtime)
+        min_votes = RecommendationFiltering.get_quality_thresholds(service.user_settings)[1]
+        batches = await asyncio.gather(
+            *(
+                service._fetch_discover_candidates(
+                    content_type, {**base, "sort_by": sort, "vote_count.gte": max(200, min_votes)}, PAGES
+                )
+                for sort in SORTS
+            )
+        )
+        for item in itertools.chain.from_iterable(batches):
+            found.setdefault(item["id"], item)
+        unique = filter_items_by_settings(list(found.values()), service.user_settings)
+        usable = [
+            i
+            for i in filter_by_genres(unique, watched_tmdb, excluded)
+            if clears_floor(i, BASE_FLOOR) and axes.matches(i)
+            # English unless the row is about a country; a row of subtitled titles was the complaint.
+            and ("country" in axes.rest or language_ok(i, None))
+        ]
+        if len(usable) >= limit * CHOICE_DEPTH:
+            break
+
+    def score(item: dict[str, Any]) -> float:
+        fit = (
+            RecommendationScoring.calculate_final_score(item=item, profile=profile, scorer=service.scorer, mtype=mtype)
+            if profile
+            else 0.5
+        )
+        return 0.5 * quality(item, mtype) + 0.5 * min(fit, 1.0)
+
+    best = sorted(usable, key=score, reverse=True)[: limit * CHOICE_DEPTH]
+    chosen = day_order(best, f"{row_key}|{content_type}", score)
+    enriched = await RecommendationMetadata.fetch_batch(
+        service.tmdb_service, chosen[: math.ceil(limit * 1.4)], content_type, user_settings=service.user_settings
+    )
+    if settings.FIT_GATE:
+        enriched = [i for i in enriched if axes.fits(i)]
+    return filter_watched_by_imdb(enriched, watched_imdb)[:limit]
 
 
 class WideThemeService(ThemeBasedService):
-    """Genre and keyword rows held to the rating floor and topped up to a full row.
+    """Genre and keyword rows that keep to every filter in their name and change their
+    titles from day to day.
 
-    The stock row is one discover query, plus its parts when that comes up short, and
-    stops there. A narrow combination (a genre, a keyword and a country) can run out
-    well before 20, and a lenient popularity setting lets poorly rated titles in. This
-    drops what is below the floor, then widens only as far as the row needs.
+    Stock widened a short row to each axis on its own, so a "Murder" crime row filled with
+    any crime film, and always served the same top-scored titles for the same theme.
     """
 
     async def get_recommendations_for_theme(
@@ -46,84 +190,12 @@ class WideThemeService(ThemeBasedService):
         watched_imdb: set[str] | None = None,
         limit: int = 20,
     ) -> list[dict[str, Any]]:
-        picks = await super().get_recommendations_for_theme(
-            theme_id, content_type, profile, watched_tmdb, watched_imdb, limit
+        axes = ThemeAxes.parse(theme_id)
+        if axes.is_empty():
+            return []
+        return await theme_picks(
+            self, axes, theme_id, content_type, profile, watched_tmdb or set(), watched_imdb or set(), limit
         )
-        picks = [p for p in picks if clears_floor(p, BASE_FLOOR)]
-        if settings.FIT_GATE:
-            picks = [p for p in picks if self._fits(p, theme_id)]
-        if len(picks) >= limit:
-            return picks
-        extra = await self._top_up(picks, theme_id, content_type, watched_tmdb, watched_imdb, limit)
-        if settings.FIT_GATE:
-            extra = [p for p in extra if self._fits(p, theme_id)]
-        return picks + extra
-
-    def _fits(self, item: dict[str, Any], theme_id: str) -> bool:
-        anchors, flavors, fallbacks = self._parse_theme_id(theme_id)
-        return fits_theme(item, *theme_axis_ids({**anchors, **flavors, **fallbacks}))
-
-    async def _top_up(
-        self,
-        picks: list[dict[str, Any]],
-        theme_id: str,
-        content_type: str,
-        watched_tmdb: set[int] | None,
-        watched_imdb: set[str] | None,
-        limit: int,
-    ) -> list[dict[str, Any]]:
-        anchors, flavors, fallbacks = self._parse_theme_id(theme_id)
-        skip = (watched_tmdb or set()) | {p["_tmdb_id"] for p in picks}
-        excluded = RecommendationFiltering.get_excluded_genre_ids(self.user_settings, content_type)
-        need = limit - len(picks)
-
-        found: dict[int, dict[str, Any]] = {}
-        usable: list[dict[str, Any]] = []
-        for params, pages in self._ladder(anchors, flavors, fallbacks, content_type):
-            for item in await self._fetch_discover_candidates(content_type, params, pages):
-                found.setdefault(item["id"], item)
-            unique = filter_items_by_settings(list(found.values()), self.user_settings)
-            usable = [i for i in filter_by_genres(unique, skip, excluded) if clears_floor(i, BASE_FLOOR)]
-            # Twice what is needed: some are dropped once enriched.
-            if len(usable) >= need * 2:
-                break
-
-        mtype = content_type_to_mtype(content_type)
-        usable.sort(
-            key=lambda i: (self._calculate_theme_score(i, anchors, flavors, fallbacks), quality(i, mtype)),
-            reverse=True,
-        )
-        enriched = await RecommendationMetadata.fetch_batch(
-            self.tmdb_service, usable[: math.ceil(need * 1.5)], content_type, user_settings=self.user_settings
-        )
-        return filter_watched_by_imdb(enriched, watched_imdb or set())[:need]
-
-    def _ladder(
-        self, anchors: dict, flavors: dict, fallbacks: dict, content_type: str
-    ) -> list[tuple[dict[str, Any], list[int]]]:
-        """Queries tried in turn, each wider than the last: the same query deeper, the
-        anchors alone, then the leading genre alone. Country, era and keyword stay on
-        throughout; they define the row. A row named for a keyword never widens past it,
-        or a superhero row fills up with whatever else the profile likes."""
-        axes = {**anchors, **flavors, **fallbacks}
-        kept = {name: axes[name] for name in (*MANDATORY_AXES, "keyword") if name in axes}
-        min_rating, min_votes = RecommendationFiltering.get_quality_thresholds(self.user_settings)
-        # Best rated first, but only among titles with enough votes to mean something.
-        best = {
-            "sort_by": "vote_average.desc",
-            "vote_count.gte": max(300, min_votes),
-            "vote_average.gte": max(BASE_FLOOR, min_rating),
-        }
-
-        def query(chosen: dict) -> dict[str, Any]:
-            return {**best, **self._axes_to_params({**chosen, **kept}, content_type)}
-
-        steps: list[tuple[dict[str, Any], list[int]]] = [(self._axes_to_params(axes, content_type), [4, 5, 6])]
-        if anchors:
-            steps.append((query(anchors), [1, 2, 3, 4]))
-        if "genre" in axes and "keyword" not in axes:
-            steps.append((query({"genre": str(axes["genre"]).split("-")[0]}), [1, 2, 3, 4, 5]))
-        return steps
 
 
 # A mixed theme row is stored as `<type>:<theme id>`: the type whose profile and genre ids the
@@ -219,41 +291,7 @@ async def mixed_theme_recommendations(
 async def _cross_theme(
     service: ThemeBasedService, theme_id: str, native: str, content_type: str, state: TypeState, count: int
 ) -> list[dict[str, Any]]:
-    anchors, flavors, fallbacks = service._parse_theme_id(theme_id)
-    axes = {name: value for name, value in {**anchors, **flavors, **fallbacks}.items() if name != "runtime"}
-    if "genre" in axes:
-        table = MOVIE_TO_SERIES_GENRES if native == "movie" else SERIES_TO_MOVIE_GENRES
-        mapped = dict.fromkeys(g for v in str(axes["genre"]).split("-") for g in table.get(int(v), []))
-        if mapped:
-            axes["genre"] = "-".join(map(str, mapped))
-        else:
-            del axes["genre"]
-    if not axes:
+    axes = ThemeAxes.parse(theme_id).across(native)
+    if axes.is_empty():
         return []
-
-    profile, watched_tmdb, watched_imdb = state
-    excluded = RecommendationFiltering.get_excluded_genre_ids(service.user_settings, content_type)
-    found: dict[int, dict[str, Any]] = {}
-    # Keyword last: a theme this narrow can have no partner in the other type.
-    for drop_keyword in (False, True):
-        chosen = {k: v for k, v in axes.items() if not (drop_keyword and k == "keyword")}
-        params = {
-            "sort_by": "vote_average.desc",
-            "vote_count.gte": 300,
-            **service._axes_to_params(chosen, content_type),
-        }
-        for item in await service._fetch_discover_candidates(content_type, params, [1, 2, 3]):
-            found.setdefault(item["id"], item)
-        if len(found) >= count * 2:
-            break
-
-    unique = filter_items_by_settings(list(found.values()), service.user_settings)
-    usable = [i for i in filter_by_genres(unique, watched_tmdb, excluded) if clears_floor(i, BASE_FLOOR)]
-    mtype = content_type_to_mtype(content_type)
-    usable.sort(key=lambda i: quality(i, mtype), reverse=True)
-    enriched = await RecommendationMetadata.fetch_batch(
-        service.tmdb_service, usable[: math.ceil(count * 1.5)], content_type, user_settings=service.user_settings
-    )
-    if settings.FIT_GATE:
-        enriched = [i for i in enriched if fits_theme(i, *theme_axis_ids(axes))]
-    return filter_watched_by_imdb(enriched, watched_imdb)[:count]
+    return await theme_picks(service, axes, theme_id, content_type, *state, count)

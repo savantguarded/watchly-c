@@ -3,14 +3,17 @@ from typing import TypeVar
 
 T = TypeVar("T")
 
-# Genres a day's rows can anchor on, so a week of rows reaches past the profile's top three.
-GENRE_POOL = 8
+# How far down the profile's ranked genres and keywords the rows reach. A day uses only its
+# own slice of each pool, so a keyword comes back once every len(pool) / per-day days.
+GENRE_POOL = 12
+KEYWORD_POOL = 30
 
 
-def rotated(ranked: list[T], window: int, day: date) -> list[T]:
-    """The profile's ranked list turned by one window a day. Rows pick from the first
-    `window` entries, so each day they draw on a different slice and every entry gets its turn."""
-    if len(ranked) <= window:
+def day_slice(ranked: list[T], size: int, day: date) -> list[T]:
+    """`size` entries of `ranked`, moved on by `size` every day and wrapping round, so each
+    entry gets a day before any entry gets a second one. The rows are built from this slice
+    alone: reaching past it is what brought the same keyword back most days."""
+    if len(ranked) <= size:
         return ranked
-    shift = day.toordinal() * window % len(ranked)
-    return ranked[shift:] + ranked[:shift]
+    start = day.toordinal() * size % len(ranked)
+    return [ranked[(start + i) % len(ranked)] for i in range(size)]

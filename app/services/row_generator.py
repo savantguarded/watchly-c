@@ -22,7 +22,7 @@ from app.services.tmdb.countries import COUNTRY_ADJECTIVES
 from app.services.tmdb.genre import movie_genres, series_genres
 from app.services.tmdb.service import TMDBService, get_tmdb_service
 from app.watchly_c.seeds import today
-from app.watchly_c.theme_rotation import GENRE_POOL, rotated
+from app.watchly_c.theme_rotation import GENRE_POOL, KEYWORD_POOL, day_slice
 from app.watchly_c.theme_titles import KEYWORD_LINES, title_for
 
 GOLD_END = 3
@@ -185,18 +185,19 @@ def _build_rising_row(
     used_genres: set[int],
     used_keywords: set[int],
     reach: int = 0,
+    start: int = SILVER_START,
 ) -> tuple[list[tuple[str, str, Any]], str] | None:
     axes: list[tuple[str, str, Any]] = []
     title_parts: list[str] = []
 
-    k = _pick(keywords, SILVER_START, SILVER_END + reach, used_keywords)
+    k = _pick(keywords, start, SILVER_END + reach, used_keywords)
     if not k or k[0] not in keyword_names:
         return None
     axes.append((ROLE_ANCHOR, AXIS_KEYWORD, k[0]))
     title_parts.append(_keyword_display(keyword_names[k[0]]))
     used_keywords.add(k[0])
 
-    g = _pick(genres, SILVER_START, SILVER_END + reach, used_genres)
+    g = _pick(genres, start, SILVER_END + reach, used_genres)
     if g:
         axes.append((ROLE_FLAVOR, AXIS_GENRE, g[0]))
         title_parts.append(_genre_name(g[0], content_type))
@@ -219,9 +220,12 @@ def build_fallback_rows(
     count: int = 3,
     avoid_genres: set[int] | None = None,
     avoid_keywords: set[int] | None = None,
+    whole_slice: bool = False,
 ) -> list[tuple[list[tuple[str, str, Any]], str]]:
     """Build up to `count` rows as (axes, fallback_title) tuples, three to a round.
-    Each later round reaches further down the profile's genres and keywords."""
+    Each later round reaches further down the profile's genres and keywords. With
+    `whole_slice` the lists are already the day's share, so the rising row takes from
+    the top of them too instead of from below the top three."""
     rows: list[tuple[list[tuple[str, str, Any]], str]] = []
     seen: set[str] = set()
     titles: set[str] = set()
@@ -233,7 +237,15 @@ def build_fallback_rows(
             _build_core_row(genres, keywords, runtimes, keyword_names, content_type, used_genres, used_keywords, reach),
             _build_blend_row(genres, countries, content_type, used_genres, reach),
             _build_rising_row(
-                genres, keywords, countries, keyword_names, content_type, used_genres, used_keywords, reach
+                genres,
+                keywords,
+                countries,
+                keyword_names,
+                content_type,
+                used_genres,
+                used_keywords,
+                reach,
+                0 if whole_slice else SILVER_START,
             ),
         )
         for row in round_rows:
@@ -286,8 +298,10 @@ class RowGeneratorService:
         Without an LLM config (user supplied no key) the rows come purely from
         the template fallback — no LLM calls are made at all.
         """
-        genres = profile.get_top_genres(limit=max(GENRE_POOL if settings.ROTATE_THEME_ROWS else 5, count + 2))
-        keywords = profile.get_top_keywords(limit=max(10, 3 * count))
+        rotate = settings.ROTATE_THEME_ROWS
+        genres = profile.get_top_genres(limit=max(GENRE_POOL if rotate else 5, count + 2))
+        # Most profile keywords have no title line, so the rotating pool starts well down the list.
+        keywords = profile.get_top_keywords(limit=2 * KEYWORD_POOL if rotate else max(10, 3 * count))
         countries = profile.get_top_countries(limit=2)
         runtimes = sorted(profile.runtime_bucket_scores.items(), key=lambda x: x[1], reverse=True)
 
@@ -295,8 +309,10 @@ class RowGeneratorService:
         # Keywords without a title line make bad rows, so only the ones with one are used.
         keyword_names = {kid: name for kid, name in keyword_names.items() if name.lower() in KEYWORD_LINES}
         keywords = [(kid, score) for kid, score in keywords if kid in keyword_names]
-        if settings.ROTATE_THEME_ROWS:
-            genres, keywords = rotated(genres, GOLD_END, today()), rotated(keywords, GOLD_END, today())
+        if rotate:
+            # Per three rows: a genre for each, a second genre for the blend, a keyword for the core and the rising row.
+            genres = day_slice(genres, count + 1 + count // 3, today())
+            keywords = day_slice(keywords[:KEYWORD_POOL], -(-2 * count // 3), today())
 
         # The structured path asks for exactly three rows and knows nothing of the other type's
         # rows, so with row counts and no-repeat rows the model only writes titles.
@@ -312,7 +328,16 @@ class RowGeneratorService:
                 logger.warning(f"LLM row generation failed, using fallback: {e}")
 
         rows = build_fallback_rows(
-            genres, keywords, countries, runtimes, keyword_names, content_type, count, avoid_genres, avoid_keywords
+            genres,
+            keywords,
+            countries,
+            runtimes,
+            keyword_names,
+            content_type,
+            count,
+            avoid_genres,
+            avoid_keywords,
+            whole_slice=rotate,
         )
         prompts = (
             [describe_axes(axes, keyword_names, content_type, title) for axes, title in rows]

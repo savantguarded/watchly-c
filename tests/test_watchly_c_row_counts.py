@@ -88,14 +88,16 @@ def test_a_theme_or_seasonal_config_saved_before_counts_keeps_its_six_rows():
 
 
 def test_titles_are_written_not_assembled_from_tags():
-    from app.watchly_c.theme_titles import title_for
+    from app.watchly_c.theme_titles import GENRE_LINES, KEYWORD_LINES, title_for
 
     names = {7: "revenge", 8: "woman director"}
 
-    assert title_for([("a", "g", 53), ("f", "k", 7)], names) == "Revenge, Served Cold"
-    assert title_for([("a", "g", 53), ("f", "k", 8)], names) == "Edge-of-Your-Seat Thrillers"
-    assert title_for([("a", "g", 80), ("f", "ct", "KR")], names) == "Korean Crime"
-    assert title_for([("a", "g", 80), ("f", "g", 35)], names) == "Crime Meets Comedy"
+    assert title_for([("a", "g", 53), ("f", "k", 7)], names) in KEYWORD_LINES["revenge"]
+    assert title_for([("a", "g", 53), ("f", "k", 8)], names) in GENRE_LINES[53]
+    korean_crime = title_for([("a", "g", 80), ("f", "ct", "KR")], names)
+    assert "Korean" in korean_crime and "Crime" in korean_crime
+    crime_comedy = title_for([("a", "g", 80), ("f", "g", 35)], names)
+    assert "Crime" in crime_comedy and "Comedy" in crime_comedy
 
 
 def test_only_keywords_with_a_title_line_become_rows(monkeypatch):

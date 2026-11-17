@@ -86,4 +86,18 @@ def test_a_row_names_one_keyword_and_queries_that_same_keyword():
             used = [value for _, kind, value in axes if kind == "k"]
             assert len(used) <= 1
             if used:
-                assert title == title_for(axes, names) == KEYWORD_LINES[names[used[0]]]
+                assert title == title_for(axes, names)
+                assert title in KEYWORD_LINES[names[used[0]]]
+
+
+def test_a_theme_goes_by_different_names_on_different_days(monkeypatch):
+    from app.watchly_c import theme_titles
+    from app.watchly_c.theme_titles import KEYWORD_LINES, title_for
+
+    assert len(KEYWORD_LINES) >= 200
+    assert all(len(set(v)) == len(v) >= 1 for v in KEYWORD_LINES.values())
+    seen = set()
+    for n in range(40):
+        monkeypatch.setattr(theme_titles, "today", lambda n=n: DAY + timedelta(days=n))
+        seen.add(title_for([("a", "k", 1)], {1: "heist"}))
+    assert seen == set(KEYWORD_LINES["heist"])

@@ -70,12 +70,67 @@ def test_the_rotating_slot_cycles_through_every_evergreen_row():
     seen: set[str] = set()
     shown: dict[str, str] = {}
     day = date(2026, 4, 14)
-    for n in range(10):
+    for n in range(len(SPECS)):
         today_ = Today(day + timedelta(days=n), False, True)
         for spec in choose_specs(BOTH, today_, shown, random.Random(n), 4):
             shown[spec.key] = today_.day.isoformat()
             seen.add(spec.key)
     assert seen >= {s.key for s in SPECS if s.kind == "evergreen"}
+
+
+def test_the_pool_is_wide_and_every_name_is_its_own():
+    evergreen = [s for s in SPECS if s.kind == "evergreen"]
+    names = [n for s in SPECS for n in (s.name, *s.alt_names)]
+    assert len(evergreen) >= 80
+    assert len(names) == len(set(names))
+    assert len({s.key for s in SPECS}) == len(SPECS)
+
+
+def test_every_name_fills_in_from_the_fields_a_pick_has():
+    fields = {"weekday": "Friday", "day": "3", "month": "Nov", "person": "X", "decade": "1990"}
+    for spec in SPECS:
+        for name in (spec.name, *spec.alt_names):
+            name.format(**fields)
+
+
+def test_a_row_goes_by_different_names_on_different_days():
+    spec = SPEC_BY_KEY["cozy_night"]
+    day = date(2026, 4, 1)
+    picked = {
+        asyncio.run(context_rows._pick(None, spec, day + timedelta(days=n), [], lambda i: None, 1990))["name"]
+        for n in range(30)
+    }
+    assert picked == {spec.name, *spec.alt_names}
+
+
+def test_african_rows_hold_only_titles_from_the_countries_they_name():
+    strict = [
+        s
+        for s in SPECS
+        if s.key.startswith(
+            ("nollywood_", "ghana_", "south_africa_", "east_africa_", "north_africa_", "francophone_", "african_")
+        )
+    ]
+    assert len(strict) >= 9
+    for spec in strict:
+        for looks in spec.looks.values():
+            assert all(look.countries for look in looks), spec.key
+
+
+def test_the_dated_rows_run_only_around_their_date():
+    for key, inside, outside in (
+        ("independence_day", "2026-10-01", "2026-10-10"),
+        ("democracy_day", "2026-06-12", "2026-06-20"),
+        ("childrens_day", "2026-05-27", "2026-06-01"),
+        ("easter", "2026-04-05", "2026-05-05"),
+        ("harmattan", "2026-01-20", "2026-07-20"),
+    ):
+        assert is_eligible(SPEC_BY_KEY[key], at(inside)), key
+        assert not is_eligible(SPEC_BY_KEY[key], at(outside)), key
+    assert is_eligible(SPEC_BY_KEY["tuesday"], at("2026-11-03"))
+    assert not is_eligible(SPEC_BY_KEY["tuesday"], at("2026-11-04"))
+    assert is_eligible(SPEC_BY_KEY["month_start"], at("2026-11-02"))
+    assert not is_eligible(SPEC_BY_KEY["month_start"], at("2026-11-12"))
 
 
 def test_every_row_has_a_definition_for_each_type_it_claims():

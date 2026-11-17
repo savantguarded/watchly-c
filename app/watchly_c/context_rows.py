@@ -129,6 +129,8 @@ class Spec:
     nearest_first: bool = False
     # TMDB holds few votes for these titles, so the popularity setting's vote floor would empty the row.
     ignores_popularity: bool = False
+    # Other names for the same row; the day picks which one it goes by.
+    alt_names: tuple[str, ...] = ()
 
 
 async def _on_this_day(service: "ContextRowService", plan: Plan) -> tuple[Look, ...]:
@@ -209,6 +211,7 @@ SPECS: tuple[Spec, ...] = (
             ),
         },
         window=((10, 1), (11, 1)),
+        alt_names=("Halloween Watchlist", "Fright Night", "Creeping Dread"),
     ),
     Spec(
         "spooky_gentle",
@@ -219,6 +222,7 @@ SPECS: tuple[Spec, ...] = (
             "series": (Look(genres="10751|16|35|10765|10762", keywords=SPOOKY_GENTLE, votes=150),),
         },
         window=((10, 1), (11, 1)),
+        alt_names=("Friendly Frights", "Scary Lite", "Halloween for the Whole Family"),
     ),
     Spec(
         "holiday",
@@ -226,6 +230,7 @@ SPECS: tuple[Spec, ...] = (
         "Holiday Season",
         {"movie": (Look(keywords=HOLIDAY, votes=200),), "series": (Look(keywords=HOLIDAY, votes=100),)},
         window=((12, 1), (12, 31)),
+        alt_names=("Festive Season", "Holiday Watchlist", "Cosy Christmas Picks"),
     ),
     Spec(
         "valentines",
@@ -239,6 +244,7 @@ SPECS: tuple[Spec, ...] = (
             "series": (Look(genres="18|35", keywords=("romance", "love", "relationship"), votes=300),),
         },
         window=((2, 1), (2, 14)),
+        alt_names=("Love Is in the Air", "Date Night Picks", "Hearts and Flowers"),
     ),
     Spec(
         "awards",
@@ -250,6 +256,7 @@ SPECS: tuple[Spec, ...] = (
         },
         window=((1, 1), (3, 15)),
         floor=7.0,
+        alt_names=("Awards Contenders", "Prestige Picks", "The Ones Everyone Is Talking About"),
     ),
     Spec(
         "summer",
@@ -262,6 +269,7 @@ SPECS: tuple[Spec, ...] = (
             ),
         },
         window=((6, 1), (8, 31)),
+        alt_names=("Big Summer Movies", "Popcorn Season", "Summer Hits"),
     ),
     Spec(
         "african",
@@ -275,6 +283,7 @@ SPECS: tuple[Spec, ...] = (
         # TMDB holds few votes for most African titles, so a vote floor of 100 would empty the row.
         min_votes=15,
         ignores_popularity=True,
+        alt_names=("Stories From Africa", "Across the Continent", "Africa on Screen"),
     ),
     Spec(
         "weekend",
@@ -284,6 +293,7 @@ SPECS: tuple[Spec, ...] = (
             "movie": (Look(genres="28|35|12", runtime=(90, 135), sort="popularity.desc", votes=1500, rating=6.8),),
             "series": (Look(genres="35|10759|80", sort="popularity.desc", votes=800, rating=7.0),),
         },
+        alt_names=("{weekday} Night In", "Your {weekday} Night", "{weekday} Night Watch"),
     ),
     Spec(
         "sunday",
@@ -293,6 +303,7 @@ SPECS: tuple[Spec, ...] = (
             "movie": (Look(genres="18|10749|10402|36", runtime=(100, None), votes=1000, rating=7.2),),
             "series": (Look(genres="18", votes=500, rating=7.5),),
         },
+        alt_names=("Slow Sunday", "Lazy Sunday", "Sunday Afternoon Watch"),
     ),
     Spec(
         "rainy",
@@ -302,6 +313,7 @@ SPECS: tuple[Spec, ...] = (
             "movie": (Look(genres="35|10749|18", runtime=(None, 125), votes=1000, rating=7.0),),
             "series": (Look(genres="35|18", votes=500, rating=7.3),),
         },
+        alt_names=("Rainy Day Picks", "Cosy Rain Day", "Stay In, It's Pouring"),
     ),
     Spec(
         "on_this_day",
@@ -311,6 +323,7 @@ SPECS: tuple[Spec, ...] = (
         build=_on_this_day,
         pinned=True,
         nearest_first=True,
+        alt_names=("{day} {month} Through the Years", "Opened on {day} {month}", "This Day at the Cinema"),
     ),
     Spec(
         "late_night",
@@ -320,16 +333,38 @@ SPECS: tuple[Spec, ...] = (
             "movie": (Look(genres="53|9648|35|878", runtime=(70, 100), votes=800, rating=6.8),),
             "series": (Look(genres="35|80|9648", runtime=(None, 35), votes=500, rating=7.0),),
         },
+        alt_names=("After Midnight", "Can't Sleep?", "One More Before Bed"),
     ),
-    Spec("hidden_gems", "evergreen", "Hidden Gems for You", build=_hidden_gems, max_popularity=40.0),
-    Spec("people", "evergreen", "From the People Behind {person}", types=("movie",), build=_people),
-    Spec("decade", "evergreen", "Time Machine: the {decade}s", build=_decade),
+    Spec(
+        "hidden_gems",
+        "evergreen",
+        "Hidden Gems for You",
+        build=_hidden_gems,
+        max_popularity=40.0,
+        alt_names=("Overlooked and Underrated", "Gems You May Have Missed", "Under the Radar"),
+    ),
+    Spec(
+        "people",
+        "evergreen",
+        "From the People Behind {person}",
+        types=("movie",),
+        build=_people,
+        alt_names=("More From the Makers of {person}", "Same Makers as {person}", "Behind {person}"),
+    ),
+    Spec(
+        "decade",
+        "evergreen",
+        "Time Machine: the {decade}s",
+        build=_decade,
+        alt_names=("Back to the {decade}s", "The {decade}s Revisited", "{decade}s Throwback"),
+    ),
     Spec(
         "short_binges",
         "evergreen",
         "Short Binges",
         {"series": (Look(votes=200, rating=7.0, extra={"with_type": 2}),)},
         types=("series",),
+        alt_names=("Quick Binges", "Binge in a Weekend", "Minis Worth Watching"),
     ),
     Spec(
         "monday",
@@ -342,6 +377,7 @@ SPECS: tuple[Spec, ...] = (
             ),
             "series": (Look(keywords=("underdog", "sports", "inspirational"), votes=150, rating=7.3),),
         },
+        alt_names=("Monday Boost", "Start the Week Strong", "Monday Fuel"),
     ),
     Spec(
         "midweek",
@@ -351,6 +387,7 @@ SPECS: tuple[Spec, ...] = (
             "movie": (Look(genres="35", runtime=(None, 110), votes=1000, rating=7.0),),
             "series": (Look(genres="35", runtime=(None, 35), votes=400, rating=7.5),),
         },
+        alt_names=("Midweek Lift", "Hump Day Laughs", "Wednesday Pick-Me-Up"),
     ),
     Spec(
         "thursday",
@@ -360,6 +397,7 @@ SPECS: tuple[Spec, ...] = (
             "movie": (Look(genres="53|9648|80", votes=1000, rating=7.0),),
             "series": (Look(genres="80|9648", votes=500, rating=7.5),),
         },
+        alt_names=("Thursday Suspense", "Nearly Friday Thrills", "Thursday Night Tension"),
     ),
     Spec(
         "payday",
@@ -373,6 +411,7 @@ SPECS: tuple[Spec, ...] = (
                 Look(genres="10759|10765", sort="popularity.desc", recent_days=SIX_YEARS, votes=800, rating=7.2),
             ),
         },
+        alt_names=("Treat Yourself", "Payday Watchlist", "You Earned This"),
     ),
     Spec(
         "back_to_school",
@@ -383,6 +422,7 @@ SPECS: tuple[Spec, ...] = (
             "series": (Look(keywords=("high school", "teacher", "college"), votes=200),),
         },
         window=((8, 25), (9, 20)),
+        alt_names=("Back in Class", "School Days", "Term Time"),
     ),
     Spec(
         "detty_december",
@@ -393,6 +433,7 @@ SPECS: tuple[Spec, ...] = (
             "series": (Look(genres="35", votes=200, rating=7.2),),
         },
         window=((12, 10), (12, 31)),
+        alt_names=("December in Lagos", "Detty December Vibes", "December to Remember"),
     ),
     Spec(
         "mind_benders",
@@ -410,6 +451,7 @@ SPECS: tuple[Spec, ...] = (
                 Look(keywords=("twist ending", "time travel", "parallel universe", "mystery"), votes=200, rating=7.4),
             ),
         },
+        alt_names=("Brain Twisters", "Wait, What?", "Mind-Bending Stories"),
     ),
     Spec(
         "true_stories",
@@ -419,6 +461,7 @@ SPECS: tuple[Spec, ...] = (
             "movie": (Look(keywords=("based on true story", "biography", "true crime"), votes=800, rating=7.2),),
             "series": (Look(keywords=("based on true story", "true crime"), votes=200, rating=7.3),),
         },
+        alt_names=("Based on Real Life", "Real Events, Real People", "Truth on Screen"),
     ),
     Spec(
         "feel_good",
@@ -428,6 +471,7 @@ SPECS: tuple[Spec, ...] = (
             "movie": (Look(genres="35|10751|10749", runtime=(None, 120), votes=800, rating=7.0),),
             "series": (Look(genres="35|10751", votes=300, rating=7.3),),
         },
+        alt_names=("Feel-Good Picks", "Smiles Guaranteed", "Pure Good Vibes"),
     ),
     Spec(
         "heists",
@@ -437,6 +481,7 @@ SPECS: tuple[Spec, ...] = (
             "movie": (Look(keywords=("heist", "con artist", "robbery"), votes=500, rating=6.9),),
             "series": (Look(keywords=("heist", "con artist", "robbery"), votes=150, rating=7.2),),
         },
+        alt_names=("Capers and Heists", "The Big Score", "Pulling Off the Job"),
     ),
     Spec(
         "classics",
@@ -444,6 +489,7 @@ SPECS: tuple[Spec, ...] = (
         "Certified Classics",
         {"movie": (Look(dates=(date(1950, 1, 1), date(2005, 12, 31)), votes=4000, rating=7.8),)},
         types=("movie",),
+        alt_names=("Timeless Classics", "Classics Worth Another Look", "The Greats"),
     ),
     Spec(
         "finished_series",
@@ -451,6 +497,7 @@ SPECS: tuple[Spec, ...] = (
         "Finished and Worth the Binge",
         {"series": (Look(votes=1000, rating=8.0, extra={"with_status": "3"}),)},
         types=("series",),
+        alt_names=("Complete Series to Binge", "Whole Story, Start to Finish", "Binge-Ready Series"),
     ),
     Spec(
         "short_and_sweet",
@@ -458,6 +505,7 @@ SPECS: tuple[Spec, ...] = (
         "Short and Sweet",
         {"movie": (Look(runtime=(60, 95), votes=800, rating=7.0),)},
         types=("movie",),
+        alt_names=("Quick Movie Night", "Home Before Bedtime", "Ninety Minutes or Less"),
     ),
     Spec(
         "epics",
@@ -465,6 +513,7 @@ SPECS: tuple[Spec, ...] = (
         "Epics Worth the Time",
         {"movie": (Look(runtime=(150, None), votes=2000, rating=7.6),)},
         types=("movie",),
+        alt_names=("Big Epics", "Settle In for These", "Clear Your Evening"),
     ),
     Spec(
         "animation_grown_up",
@@ -474,6 +523,7 @@ SPECS: tuple[Spec, ...] = (
             "movie": (Look(genres="16", without_genres="10751", votes=800, rating=7.4),),
             "series": (Look(genres="16", without_genres="10751|10762", votes=300, rating=7.6),),
         },
+        alt_names=("Adult Animation", "Animation for Grown-Ups", "Cartoons After Bedtime"),
     ),
     Spec(
         "documentaries",
@@ -483,6 +533,7 @@ SPECS: tuple[Spec, ...] = (
             "movie": (Look(genres="99", votes=300, rating=7.3),),
             "series": (Look(genres="99", votes=150, rating=7.5),),
         },
+        alt_names=("Real Stories, Great Docs", "Docs That Stay With You", "Documentary Night"),
     ),
     Spec(
         "sci_fi",
@@ -492,6 +543,7 @@ SPECS: tuple[Spec, ...] = (
             "movie": (Look(genres="878", votes=1500, rating=7.2),),
             "series": (Look(genres="10765", votes=600, rating=7.4),),
         },
+        alt_names=("Sci-Fi Night", "Futures and Other Worlds", "Science Fiction Worth Staying Up For"),
     ),
     Spec(
         "crime",
@@ -501,6 +553,7 @@ SPECS: tuple[Spec, ...] = (
             "movie": (Look(genres="80", votes=1000, rating=7.2),),
             "series": (Look(genres="80", votes=500, rating=7.5),),
         },
+        alt_names=("Crime Night", "Wrong Side of the Law", "Crime Stories Done Well"),
     ),
     Spec(
         "fresh",
@@ -510,6 +563,7 @@ SPECS: tuple[Spec, ...] = (
             "movie": (Look(sort="popularity.desc", recent_days=150, votes=200, rating=7.0),),
             "series": (Look(sort="popularity.desc", recent_days=150, votes=100, rating=7.3),),
         },
+        alt_names=("Fresh and Good", "New Releases Worth Your Time", "Just In and Worth It"),
     ),
     Spec(
         "made_in_nigeria",
@@ -522,11 +576,1099 @@ SPECS: tuple[Spec, ...] = (
         floor=6.0,
         min_votes=5,
         ignores_popularity=True,
+        alt_names=("Naija Picks", "Nollywood and More", "Home-Grown Stories"),
+    ),
+    Spec(
+        "cozy_night",
+        "evergreen",
+        "Cosy Night In",
+        {
+            "movie": (Look(genres="35|10749|10751", runtime=(None, 115), votes=800, rating=7.0),),
+            "series": (Look(genres="35|10751", votes=300, rating=7.3),),
+        },
+        alt_names=("Blanket and Snacks", "Nothing Heavy Tonight"),
+    ),
+    Spec(
+        "adrenaline",
+        "evergreen",
+        "Adrenaline Rush",
+        {
+            "movie": (Look(genres="28|53", votes=1500, rating=7.0),),
+            "series": (Look(genres="10759|80", votes=500, rating=7.4),),
+        },
+        alt_names=("Heart-Racing Picks", "Hold Onto Your Seat"),
+    ),
+    Spec(
+        "slow_burns",
+        "evergreen",
+        "Slow Burns",
+        {
+            "movie": (Look(genres="18|53|9648", runtime=(110, None), votes=1000, rating=7.4),),
+            "series": (Look(genres="18|9648", votes=400, rating=7.6),),
+        },
+        alt_names=("Worth the Patience", "Let It Simmer"),
+    ),
+    Spec(
+        "date_night",
+        "evergreen",
+        "Date Night",
+        {
+            "movie": (Look(genres="10749|35", runtime=(90, 125), votes=1000, rating=7.0),),
+            "series": (Look(genres="18|35", keywords=("romance", "relationship"), votes=300, rating=7.3),),
+        },
+        alt_names=("Dinner and a Movie", "Something for Two"),
+    ),
+    Spec(
+        "family_night",
+        "evergreen",
+        "Family Movie Night",
+        {
+            "movie": (Look(genres="10751|16|12", votes=1500, rating=7.0),),
+            "series": (Look(genres="10751|16", votes=400, rating=7.4),),
+        },
+        alt_names=("Everyone on the Couch", "Fun for All Ages"),
+    ),
+    Spec(
+        "big_laughs",
+        "evergreen",
+        "Big Laughs",
+        {
+            "movie": (Look(genres="35", votes=1500, rating=7.0),),
+            "series": (Look(genres="35", votes=500, rating=7.6),),
+        },
+        alt_names=("Proper Funny", "Cry-Laughing Material"),
+    ),
+    Spec(
+        "tearjerkers",
+        "evergreen",
+        "Tearjerkers",
+        {
+            "movie": (
+                Look(
+                    genres="18|10749",
+                    keywords=("grief", "terminal illness", "loss of loved one"),
+                    votes=800,
+                    rating=7.3,
+                ),
+            ),
+            "series": (
+                Look(genres="18", keywords=("grief", "terminal illness", "loss of loved one"), votes=200, rating=7.5),
+            ),
+        },
+        alt_names=("Bring Tissues", "Heavy on the Feels"),
+    ),
+    Spec(
+        "true_crime",
+        "evergreen",
+        "True Crime Files",
+        {
+            "movie": (Look(genres="99,80", votes=150, rating=7.0),),
+            "series": (Look(genres="99,80", votes=100, rating=7.2),),
+        },
+        alt_names=("Real Cases, Real Fallout", "Crimes That Happened"),
+    ),
+    Spec(
+        "great_pretenders",
+        "evergreen",
+        "Great Pretenders",
+        {
+            "movie": (Look(keywords=("con artist", "impostor", "fraud", "scam"), votes=400, rating=6.9),),
+            "series": (Look(keywords=("con artist", "impostor", "fraud", "scam"), votes=150, rating=7.2),),
+        },
+        alt_names=("Fakers and Frauds", "Nothing but a Con"),
+    ),
+    Spec(
+        "spy_games",
+        "evergreen",
+        "Spy Games",
+        {
+            "movie": (Look(keywords=("spy", "secret agent", "espionage", "double agent"), votes=500, rating=6.9),),
+            "series": (Look(keywords=("spy", "secret agent", "espionage", "double agent"), votes=150, rating=7.2),),
+        },
+        alt_names=("Cloak and Dagger", "Secret Agents at Work"),
+    ),
+    Spec(
+        "courtroom",
+        "evergreen",
+        "Courtroom Drama",
+        {
+            "movie": (Look(keywords=("courtroom", "lawyer", "trial"), votes=500, rating=7.0),),
+            "series": (Look(keywords=("courtroom", "lawyer", "trial"), votes=150, rating=7.3),),
+        },
+        alt_names=("Order in the Court", "Your Honour"),
+    ),
+    Spec(
+        "hospital",
+        "evergreen",
+        "Code Blue",
+        {
+            "movie": (Look(keywords=("hospital", "doctor", "surgeon", "nurse"), votes=400, rating=7.0),),
+            "series": (Look(keywords=("hospital", "doctor", "surgeon", "nurse"), votes=200, rating=7.3),),
+        },
+        alt_names=("Doctors and Drama", "Life in the Ward"),
+    ),
+    Spec(
+        "power_games",
+        "evergreen",
+        "Power Corrupts",
+        {
+            "movie": (
+                Look(keywords=("politics", "political corruption", "president", "election"), votes=500, rating=7.0),
+            ),
+            "series": (
+                Look(keywords=("politics", "political corruption", "president", "election"), votes=200, rating=7.4),
+            ),
+        },
+        alt_names=("Corridors of Power", "Politics Behind Closed Doors"),
+    ),
+    Spec(
+        "newsroom",
+        "evergreen",
+        "Stop the Presses",
+        {
+            "movie": (Look(keywords=("journalist", "journalism", "newspaper", "reporter"), votes=300, rating=7.0),),
+            "series": (Look(keywords=("journalist", "journalism", "newspaper", "reporter"), votes=100, rating=7.3),),
+        },
+        alt_names=("Chasing the Story", "Newsroom Drama"),
+    ),
+    Spec(
+        "war_stories",
+        "evergreen",
+        "Under Fire",
+        {
+            "movie": (Look(genres="10752", votes=1000, rating=7.3),),
+            "series": (Look(genres="10768", votes=300, rating=7.5),),
+        },
+        alt_names=("War Stories", "Courage on the Front Line"),
+    ),
+    Spec(
+        "westerns",
+        "evergreen",
+        "Saddle Up",
+        {
+            "movie": (Look(genres="37", votes=500, rating=7.2),),
+            "series": (Look(genres="37", votes=100, rating=7.3),),
+        },
+        alt_names=("Dust, Guns and Gold", "Riders and Outlaws"),
+    ),
+    Spec(
+        "sing_along",
+        "evergreen",
+        "Sing Along",
+        {
+            "movie": (Look(genres="10402", keywords=("musical",), votes=500, rating=7.0),),
+            "series": (Look(keywords=("musical", "music"), votes=100, rating=7.3),),
+        },
+        alt_names=("Big Musical Numbers", "Showstoppers"),
+    ),
+    Spec(
+        "game_on",
+        "evergreen",
+        "Game On",
+        {
+            "movie": (Look(keywords=("sports", "boxing", "coach", "underdog"), votes=500, rating=7.0),),
+            "series": (Look(keywords=("sports", "boxing", "coach", "underdog"), votes=100, rating=7.3),),
+        },
+        alt_names=("Sports Dramas", "Underdogs and Champions"),
+    ),
+    Spec(
+        "beyond_earth",
+        "evergreen",
+        "Beyond Earth",
+        {
+            "movie": (Look(keywords=("space", "astronaut", "space travel", "spaceship"), votes=800, rating=7.0),),
+            "series": (Look(keywords=("space", "astronaut", "space travel", "spaceship"), votes=200, rating=7.3),),
+        },
+        alt_names=("To the Stars", "Out in Space"),
+    ),
+    Spec(
+        "end_times",
+        "evergreen",
+        "The End of the World",
+        {
+            "movie": (
+                Look(
+                    keywords=("post-apocalyptic future", "apocalypse", "end of the world", "dystopia"),
+                    votes=600,
+                    rating=6.9,
+                ),
+            ),
+            "series": (
+                Look(
+                    keywords=("post-apocalyptic future", "apocalypse", "end of the world", "dystopia"),
+                    votes=200,
+                    rating=7.3,
+                ),
+            ),
+        },
+        alt_names=("Last Ones Standing", "After the Collapse"),
+    ),
+    Spec(
+        "time_twists",
+        "evergreen",
+        "Time Twisters",
+        {
+            "movie": (Look(keywords=("time travel", "time loop", "time machine"), votes=500, rating=7.0),),
+            "series": (Look(keywords=("time travel", "time loop", "time machine"), votes=150, rating=7.3),),
+        },
+        alt_names=("Rewind and Fast-Forward", "Timelines Gone Wrong"),
+    ),
+    Spec(
+        "heroes",
+        "evergreen",
+        "Heroes and Villains",
+        {
+            "movie": (Look(keywords=("superhero", "supervillain", "superpower"), votes=1500, rating=6.8),),
+            "series": (Look(keywords=("superhero", "supervillain", "superpower"), votes=400, rating=7.2),),
+        },
+        alt_names=("Capes, Masks and Mayhem", "Super Powered"),
+    ),
+    Spec(
+        "quests",
+        "evergreen",
+        "Quests and Kingdoms",
+        {
+            "movie": (
+                Look(keywords=("dragon", "wizard", "magic", "sword and sorcery", "quest"), votes=800, rating=6.9),
+            ),
+            "series": (
+                Look(keywords=("dragon", "wizard", "magic", "sword and sorcery", "quest"), votes=300, rating=7.3),
+            ),
+        },
+        alt_names=("Dragons and Wizards", "Fantasy Worth the Journey"),
+    ),
+    Spec(
+        "creature_features",
+        "evergreen",
+        "Creature Features",
+        {
+            "movie": (Look(keywords=("monster", "giant monster", "creature", "kaiju"), votes=400, rating=6.3),),
+            "series": (Look(keywords=("monster", "giant monster", "creature", "kaiju"), votes=100, rating=7.0),),
+        },
+        floor=6.2,
+        alt_names=("Things With Teeth", "Monster Mash"),
+    ),
+    Spec(
+        "bump_in_the_night",
+        "evergreen",
+        "Things That Go Bump",
+        {
+            "movie": (Look(keywords=("ghost", "haunted house", "possession", "exorcism"), votes=500, rating=6.4),),
+            "series": (Look(keywords=("ghost", "haunted house", "possession", "exorcism"), votes=150, rating=7.0),),
+        },
+        floor=6.3,
+        alt_names=("Haunted and Hunted", "Don't Turn Off the Lights"),
+    ),
+    Spec(
+        "slashers",
+        "evergreen",
+        "Slashers and Final Girls",
+        {
+            "movie": (Look(keywords=("slasher", "serial killer"), votes=400, rating=6.2),),
+        },
+        types=("movie",),
+        floor=6.1,
+        alt_names=("Masked Killers", "Stalk and Slash"),
+    ),
+    Spec(
+        "head_games",
+        "evergreen",
+        "Messing With Your Head",
+        {
+            "movie": (
+                Look(
+                    keywords=("psychological thriller", "paranoia", "unreliable narrator", "gaslighting"),
+                    votes=500,
+                    rating=6.8,
+                ),
+            ),
+            "series": (
+                Look(
+                    keywords=("psychological thriller", "paranoia", "unreliable narrator", "gaslighting"),
+                    votes=150,
+                    rating=7.2,
+                ),
+            ),
+        },
+        alt_names=("Mind Games", "Is It Real?"),
+    ),
+    Spec(
+        "survival",
+        "evergreen",
+        "Survival Stories",
+        {
+            "movie": (Look(keywords=("survival", "stranded", "shipwreck", "wilderness"), votes=500, rating=6.8),),
+            "series": (Look(keywords=("survival", "stranded", "shipwreck", "wilderness"), votes=150, rating=7.2),),
+        },
+        alt_names=("Fight to Survive", "Stranded"),
+    ),
+    Spec(
+        "disaster_zone",
+        "evergreen",
+        "Disaster Zone",
+        {
+            "movie": (
+                Look(
+                    keywords=("natural disaster", "earthquake", "volcano", "tsunami", "flood", "asteroid"),
+                    votes=300,
+                    rating=6.5,
+                ),
+            ),
+            "series": (
+                Look(
+                    keywords=("natural disaster", "earthquake", "volcano", "tsunami", "flood", "asteroid"),
+                    votes=100,
+                    rating=7.0,
+                ),
+            ),
+        },
+        alt_names=("When It All Goes Wrong", "Nature Strikes Back"),
+    ),
+    Spec(
+        "road_trips",
+        "evergreen",
+        "On the Road",
+        {
+            "movie": (Look(keywords=("road trip", "road movie"), votes=500, rating=6.9),),
+            "series": (Look(keywords=("road trip", "road movie"), votes=100, rating=7.2),),
+        },
+        alt_names=("Hit the Road", "Road Trip Rides"),
+    ),
+    Spec(
+        "growing_up",
+        "evergreen",
+        "Growing Up",
+        {
+            "movie": (Look(keywords=("coming of age", "first love"), votes=600, rating=7.0),),
+            "series": (Look(keywords=("coming of age", "first love"), votes=200, rating=7.3),),
+        },
+        alt_names=("Growing Pains", "The Awkward Years"),
+    ),
+    Spec(
+        "rom_coms",
+        "evergreen",
+        "Rom-Com Comfort",
+        {
+            "movie": (Look(genres="35,10749", votes=1200, rating=6.8),),
+            "series": (Look(genres="35", keywords=("romance", "love"), votes=300, rating=7.3),),
+        },
+        alt_names=("Meet-Cutes and Mix-Ups", "Laughing and Falling in Love"),
+    ),
+    Spec(
+        "love_stories",
+        "evergreen",
+        "Love Stories That Last",
+        {
+            "movie": (Look(genres="10749,18", votes=1000, rating=7.3),),
+            "series": (Look(genres="18", keywords=("romance", "love"), votes=300, rating=7.5),),
+        },
+        alt_names=("Swoon-Worthy Romance", "For the Hopeless Romantics"),
+    ),
+    Spec(
+        "best_friends",
+        "evergreen",
+        "Best Friends Forever",
+        {
+            "movie": (Look(keywords=("buddy comedy", "best friend", "buddy cop", "bromance"), votes=600, rating=6.8),),
+            "series": (Look(keywords=("buddy comedy", "best friend", "buddy cop", "bromance"), votes=150, rating=7.2),),
+        },
+        alt_names=("Partners in Crime", "Ride or Die"),
+    ),
+    Spec(
+        "family_secrets",
+        "evergreen",
+        "Family Secrets",
+        {
+            "movie": (
+                Look(
+                    keywords=("family secrets", "dysfunctional family", "inheritance", "family reunion"),
+                    votes=300,
+                    rating=7.0,
+                ),
+            ),
+            "series": (
+                Look(
+                    keywords=("family secrets", "dysfunctional family", "inheritance", "family reunion"),
+                    votes=200,
+                    rating=7.3,
+                ),
+            ),
+        },
+        alt_names=("Skeletons in the Closet", "Family Drama"),
+    ),
+    Spec(
+        "small_town_mysteries",
+        "evergreen",
+        "Welcome to Nowhere",
+        {
+            "movie": (Look(genres="9648|18|53", keywords=("small town",), votes=400, rating=6.8),),
+            "series": (Look(genres="9648|18|80", keywords=("small town",), votes=150, rating=7.3),),
+        },
+        alt_names=("Small Town, Big Secrets", "Everybody Knows Everybody"),
+    ),
+    Spec(
+        "island_getaways",
+        "evergreen",
+        "Island Getaways",
+        {
+            "movie": (Look(keywords=("island", "tropical island", "beach"), votes=400, rating=6.5),),
+            "series": (Look(keywords=("island", "tropical island", "beach"), votes=100, rating=7.0),),
+        },
+        alt_names=("Paradise Found", "Stranded in Paradise"),
+    ),
+    Spec(
+        "city_lights",
+        "evergreen",
+        "City Lights",
+        {
+            "movie": (
+                Look(
+                    genres="18|10749|35",
+                    keywords=("new york city", "paris, france", "london, england"),
+                    votes=800,
+                    rating=7.0,
+                ),
+            ),
+            "series": (
+                Look(
+                    genres="18|10749|35",
+                    keywords=("new york city", "paris, france", "london, england"),
+                    votes=300,
+                    rating=7.3,
+                ),
+            ),
+        },
+        alt_names=("Big City Stories", "Streets Worth Walking"),
+    ),
+    Spec(
+        "food_on_screen",
+        "evergreen",
+        "Food on Screen",
+        {
+            "movie": (Look(keywords=("chef", "restaurant", "cooking", "food"), votes=200, rating=6.8),),
+            "series": (Look(keywords=("chef", "restaurant", "cooking", "food"), votes=100, rating=7.3),),
+        },
+        alt_names=("Hungry Yet?", "Chefs and Kitchens"),
+    ),
+    Spec(
+        "behind_the_music",
+        "evergreen",
+        "Behind the Music",
+        {
+            "movie": (Look(keywords=("rapper", "hip-hop", "musician", "singer", "band"), votes=200, rating=6.8),),
+            "series": (Look(keywords=("rapper", "hip-hop", "musician", "singer", "band"), votes=100, rating=7.2),),
+        },
+        alt_names=("Beats and Rhymes", "Life on Stage"),
+    ),
+    Spec(
+        "showbiz",
+        "evergreen",
+        "Lights, Camera, Drama",
+        {
+            "movie": (Look(keywords=("hollywood", "film industry", "actor", "theater"), votes=300, rating=7.0),),
+            "series": (Look(keywords=("hollywood", "film industry", "actor", "theater"), votes=100, rating=7.3),),
+        },
+        alt_names=("Behind the Silver Screen", "Hollywood on Hollywood"),
+    ),
+    Spec(
+        "laugh_if_you_dare",
+        "evergreen",
+        "Laugh If You Dare",
+        {
+            "movie": (Look(keywords=("dark comedy", "black comedy", "satire", "mockumentary"), votes=500, rating=7.0),),
+            "series": (
+                Look(keywords=("dark comedy", "black comedy", "satire", "mockumentary"), votes=150, rating=7.4),
+            ),
+        },
+        alt_names=("Dark Humour", "Funny but Twisted"),
+    ),
+    Spec(
+        "mockumentaries",
+        "evergreen",
+        "Fake Docs, Real Laughs",
+        {
+            "movie": (Look(keywords=("mockumentary",), votes=100, rating=7.0),),
+            "series": (Look(keywords=("mockumentary",), votes=100, rating=7.3),),
+        },
+        alt_names=("Mockumentaries", "Deadpan Docs"),
+    ),
+    Spec(
+        "stand_up",
+        "evergreen",
+        "Stand-Up Specials",
+        {
+            "movie": (Look(keywords=("stand-up comedy",), votes=100, rating=6.8),),
+        },
+        types=("movie",),
+        alt_names=("Comics on Stage", "Mic Drop"),
+    ),
+    Spec(
+        "biopics",
+        "evergreen",
+        "Real Lives",
+        {
+            "movie": (Look(genres="18", keywords=("biography",), votes=800, rating=7.2),),
+            "series": (Look(keywords=("biography",), votes=100, rating=7.4),),
+        },
+        alt_names=("Biopics Worth Watching", "Life Stories"),
+    ),
+    Spec(
+        "history_alive",
+        "evergreen",
+        "History Comes Alive",
+        {
+            "movie": (Look(genres="36", votes=800, rating=7.2),),
+            "series": (Look(keywords=("period drama", "history"), votes=150, rating=7.4),),
+        },
+        alt_names=("Stories From the Past", "Look Back in Time"),
+    ),
+    Spec(
+        "ancient_worlds",
+        "evergreen",
+        "Ancient Worlds",
+        {
+            "movie": (Look(keywords=("ancient rome", "ancient greece", "gladiator", "egypt"), votes=500, rating=6.8),),
+            "series": (Look(keywords=("ancient rome", "ancient greece", "gladiator", "egypt"), votes=150, rating=7.2),),
+        },
+        alt_names=("Swords and Sandals", "Rome, Greece and Beyond"),
+    ),
+    Spec(
+        "knights_and_kings",
+        "evergreen",
+        "Knights and Kings",
+        {
+            "movie": (Look(keywords=("knight", "medieval", "viking", "king"), votes=400, rating=6.6),),
+            "series": (Look(keywords=("knight", "medieval", "viking", "king"), votes=150, rating=7.2),),
+        },
+        alt_names=("Crowns and Castles", "Age of Chivalry"),
+    ),
+    Spec(
+        "high_seas",
+        "evergreen",
+        "High Seas",
+        {
+            "movie": (Look(keywords=("pirate", "shipwreck", "sailor"), votes=400, rating=6.5),),
+            "series": (Look(keywords=("pirate", "shipwreck", "sailor"), votes=100, rating=7.0),),
+        },
+        alt_names=("Pirates and Plunder", "Sailing Into Trouble"),
+    ),
+    Spec(
+        "noir_nights",
+        "evergreen",
+        "Neo-Noir Nights",
+        {
+            "movie": (
+                Look(keywords=("film noir", "neo-noir", "femme fatale", "private detective"), votes=300, rating=7.0),
+            ),
+            "series": (
+                Look(keywords=("film noir", "neo-noir", "femme fatale", "private detective"), votes=100, rating=7.2),
+            ),
+        },
+        alt_names=("Shadows and Smoke", "Dark Streets, Darker Secrets"),
+    ),
+    Spec(
+        "cult_favourites",
+        "evergreen",
+        "Cult Favourites",
+        {
+            "movie": (Look(keywords=("cult film",), votes=500, rating=6.8),),
+        },
+        types=("movie",),
+        alt_names=("Cult Classics", "Midnight Movie Picks"),
+    ),
+    Spec(
+        "recent_greats",
+        "evergreen",
+        "Recent Greats",
+        {
+            "movie": (Look(recent_days=SIX_YEARS, votes=2500, rating=7.6),),
+            "series": (Look(recent_days=SIX_YEARS, votes=1000, rating=8.0),),
+        },
+        alt_names=("Modern Must-Watches", "The Best of the Last Few Years"),
+    ),
+    Spec(
+        "sitcoms",
+        "evergreen",
+        "Sitcom Comfort",
+        {
+            "series": (Look(keywords=("sitcom",), votes=200, rating=7.3),),
+        },
+        types=("series",),
+        alt_names=("Laugh-Track Favourites", "Easy Watching"),
+    ),
+    Spec(
+        "animated_adventures",
+        "evergreen",
+        "Animation for Everyone",
+        {
+            "movie": (Look(genres="16,10751", votes=1500, rating=7.2),),
+            "series": (Look(genres="16,10751", votes=400, rating=7.4),),
+        },
+        alt_names=("Animated Adventures", "Drawn Together"),
+    ),
+    Spec(
+        "wild_planet",
+        "evergreen",
+        "Wild Planet",
+        {
+            "movie": (Look(genres="99", keywords=("nature", "wildlife", "ocean"), votes=150, rating=7.3),),
+            "series": (Look(genres="99", keywords=("nature", "wildlife", "ocean"), votes=100, rating=7.6),),
+        },
+        alt_names=("Nature and Wild Places", "The Natural World"),
+    ),
+    Spec(
+        "curious_minds",
+        "evergreen",
+        "Docs for Curious Minds",
+        {
+            "movie": (Look(genres="99", keywords=("science", "technology", "universe"), votes=150, rating=7.2),),
+            "series": (Look(genres="99", keywords=("science", "technology", "universe"), votes=100, rating=7.5),),
+        },
+        alt_names=("Big Ideas", "Science and Society"),
+    ),
+    Spec(
+        "music_docs",
+        "evergreen",
+        "Music Docs",
+        {
+            "movie": (Look(genres="99,10402", votes=100, rating=7.2),),
+        },
+        types=("movie",),
+        alt_names=("The Story Behind the Songs", "Backstage Passes"),
+    ),
+    Spec(
+        "sports_docs",
+        "evergreen",
+        "Sports Docs",
+        {
+            "movie": (
+                Look(
+                    genres="99", keywords=("sports", "football (soccer)", "basketball", "boxing"), votes=100, rating=7.2
+                ),
+            ),
+            "series": (
+                Look(
+                    genres="99", keywords=("sports", "football (soccer)", "basketball", "boxing"), votes=100, rating=7.4
+                ),
+            ),
+        },
+        alt_names=("Behind the Game", "The Real Story of the Sport"),
+    ),
+    Spec(
+        "whodunits",
+        "evergreen",
+        "Whodunits",
+        {
+            "movie": (Look(genres="9648", votes=800, rating=7.0),),
+            "series": (Look(genres="9648", votes=300, rating=7.4),),
+        },
+        alt_names=("Who Did It?", "Murder, Mystery and Misdirection"),
+    ),
+    Spec(
+        "quick_laughs",
+        "evergreen",
+        "Quick Laughs",
+        {
+            "series": (Look(genres="35", runtime=(None, 25), votes=300, rating=7.3),),
+        },
+        types=("series",),
+        alt_names=("Short Episodes, Big Laughs", "Under 25 Minutes"),
+    ),
+    Spec(
+        "weird_and_wonderful",
+        "evergreen",
+        "Weird and Wonderful",
+        {
+            "movie": (Look(keywords=("surrealism", "absurdism"), votes=300, rating=7.0),),
+            "series": (Look(keywords=("surrealism", "absurdism"), votes=100, rating=7.3),),
+        },
+        alt_names=("Strange but Good", "Off the Beaten Path"),
+    ),
+    Spec(
+        "pets_and_pals",
+        "evergreen",
+        "Pets and Pals",
+        {
+            "movie": (Look(keywords=("dog", "cat", "horse", "pet"), votes=800, rating=6.8),),
+            "series": (Look(keywords=("dog", "cat", "horse", "pet"), votes=100, rating=7.2),),
+        },
+        alt_names=("Animal Companions", "Good Dogs and Good Cats"),
+    ),
+    Spec(
+        "teen_dramas",
+        "evergreen",
+        "Teen Dramas",
+        {
+            "movie": (Look(genres="18", keywords=("teenager", "high school"), votes=600, rating=7.0),),
+            "series": (Look(genres="18", keywords=("teenager", "high school"), votes=300, rating=7.3),),
+        },
+        alt_names=("Growing Up Messy", "High School, Higher Stakes"),
+    ),
+    Spec(
+        "cyberpunk",
+        "evergreen",
+        "Neon and Chrome",
+        {
+            "movie": (
+                Look(
+                    keywords=("cyberpunk", "android", "virtual reality", "artificial intelligence (a.i.)"),
+                    votes=500,
+                    rating=6.8,
+                ),
+            ),
+            "series": (
+                Look(
+                    keywords=("cyberpunk", "android", "virtual reality", "artificial intelligence (a.i.)"),
+                    votes=150,
+                    rating=7.3,
+                ),
+            ),
+        },
+        alt_names=("Cyberpunk Futures", "High Tech, Low Life"),
+    ),
+    Spec(
+        "nollywood_thrillers",
+        "evergreen",
+        "Nollywood Thrillers",
+        {
+            "movie": (
+                Look(genres="53|80|9648", countries="NG", sort="popularity.desc", votes=10, pages=3, language=None),
+            ),
+            "series": (
+                Look(genres="80|9648|18", countries="NG", sort="popularity.desc", votes=5, pages=2, language=None),
+            ),
+        },
+        floor=6.0,
+        min_votes=5,
+        ignores_popularity=True,
+        alt_names=("Naija Suspense", "Nigerian Crime and Mystery"),
+    ),
+    Spec(
+        "nollywood_comedy",
+        "evergreen",
+        "Nollywood Comedy",
+        {
+            "movie": (Look(genres="35", countries="NG", sort="popularity.desc", votes=10, pages=3, language=None),),
+            "series": (Look(genres="35", countries="NG", sort="popularity.desc", votes=5, pages=2, language=None),),
+        },
+        floor=6.0,
+        min_votes=5,
+        ignores_popularity=True,
+        alt_names=("Naija Laughs", "Funny From Nigeria"),
+    ),
+    Spec(
+        "nollywood_love",
+        "evergreen",
+        "Nollywood Love Stories",
+        {
+            "movie": (
+                Look(genres="10749|18", countries="NG", sort="popularity.desc", votes=10, pages=3, language=None),
+            ),
+            "series": (Look(genres="18", countries="NG", sort="popularity.desc", votes=5, pages=2, language=None),),
+        },
+        floor=6.0,
+        min_votes=5,
+        ignores_popularity=True,
+        alt_names=("Naija Romance", "Love, Lagos Style"),
+    ),
+    Spec(
+        "nollywood_action",
+        "evergreen",
+        "Action and Epics From Nigeria",
+        {
+            "movie": (
+                Look(genres="28|12|14|878", countries="NG", sort="popularity.desc", votes=10, pages=3, language=None),
+            ),
+            "series": (
+                Look(genres="10759|10765", countries="NG", sort="popularity.desc", votes=5, pages=2, language=None),
+            ),
+        },
+        floor=6.0,
+        min_votes=5,
+        ignores_popularity=True,
+        alt_names=("Naija Action and Adventure", "Big Nigerian Productions"),
+    ),
+    Spec(
+        "ghana_stories",
+        "evergreen",
+        "Ghana Stories",
+        {
+            "movie": (Look(countries="GH", sort="popularity.desc", votes=10, pages=3, language=None),),
+            "series": (Look(countries="GH", sort="popularity.desc", votes=5, pages=2, language=None),),
+        },
+        floor=6.0,
+        min_votes=5,
+        ignores_popularity=True,
+        alt_names=("Made in Ghana", "Ghollywood Picks"),
+    ),
+    Spec(
+        "south_africa_stories",
+        "evergreen",
+        "South African Stories",
+        {
+            "movie": (Look(countries="ZA", sort="popularity.desc", votes=10, pages=3, language=None),),
+            "series": (Look(countries="ZA", sort="popularity.desc", votes=5, pages=2, language=None),),
+        },
+        floor=6.0,
+        min_votes=5,
+        ignores_popularity=True,
+        alt_names=("Mzansi on Screen", "Made in South Africa"),
+    ),
+    Spec(
+        "east_africa_stories",
+        "evergreen",
+        "East African Stories",
+        {
+            "movie": (Look(countries="KE|TZ|UG|ET", sort="popularity.desc", votes=10, pages=3, language=None),),
+            "series": (Look(countries="KE|TZ|UG|ET", sort="popularity.desc", votes=5, pages=2, language=None),),
+        },
+        floor=6.0,
+        min_votes=5,
+        ignores_popularity=True,
+        alt_names=("Made in East Africa", "Nairobi, Dar and Addis"),
+    ),
+    Spec(
+        "north_africa_cinema",
+        "evergreen",
+        "North African Cinema",
+        {
+            "movie": (Look(countries="EG|MA|TN|DZ", sort="popularity.desc", votes=10, pages=3, language=None),),
+            "series": (Look(countries="EG|MA|TN|DZ", sort="popularity.desc", votes=5, pages=2, language=None),),
+        },
+        floor=6.0,
+        min_votes=5,
+        ignores_popularity=True,
+        alt_names=("Cairo to Casablanca", "Made in North Africa"),
+    ),
+    Spec(
+        "francophone_africa",
+        "evergreen",
+        "Francophone Africa",
+        {
+            "movie": (Look(countries="SN|CI|CM", sort="popularity.desc", votes=10, pages=3, language=None),),
+            "series": (Look(countries="SN|CI|CM", sort="popularity.desc", votes=5, pages=2, language=None),),
+        },
+        floor=6.0,
+        min_votes=5,
+        ignores_popularity=True,
+        alt_names=("Dakar to Douala", "Stories From Francophone Africa"),
+    ),
+    Spec(
+        "african_series",
+        "evergreen",
+        "African Series",
+        {
+            "series": (Look(countries=AFRICA, sort="popularity.desc", votes=5, pages=3, language=None),),
+        },
+        types=("series",),
+        floor=6.0,
+        min_votes=5,
+        ignores_popularity=True,
+        alt_names=("Binge-Worthy African TV", "Made for TV in Africa", "Series From the Continent"),
+    ),
+    Spec(
+        "independence_day",
+        "season",
+        "Freedom and Nationhood",
+        {
+            "movie": (Look(keywords=("revolution", "apartheid", "resistance", "civil rights"), votes=300, rating=7.0),),
+            "series": (
+                Look(keywords=("revolution", "apartheid", "resistance", "civil rights"), votes=100, rating=7.2),
+            ),
+        },
+        window=((9, 28), (10, 2)),
+        min_votes=100,
+        alt_names=("Stories of Independence", "Fighting for Freedom"),
+    ),
+    Spec(
+        "democracy_day",
+        "season",
+        "Power and the People",
+        {
+            "movie": (
+                Look(keywords=("election", "politics", "democracy", "political corruption"), votes=300, rating=7.0),
+            ),
+            "series": (
+                Look(keywords=("election", "politics", "democracy", "political corruption"), votes=100, rating=7.2),
+            ),
+        },
+        window=((6, 10), (6, 13)),
+        alt_names=("Democracy on Screen", "Votes and Voices"),
+    ),
+    Spec(
+        "childrens_day",
+        "season",
+        "Children's Day Picks",
+        {
+            "movie": (Look(genres="16|10751", votes=1000, rating=7.0),),
+            "series": (Look(genres="16|10751", votes=200, rating=7.2),),
+        },
+        window=((5, 25), (5, 28)),
+        alt_names=("Fun for the Little Ones", "Kids' Corner"),
+    ),
+    Spec(
+        "mothers_day",
+        "season",
+        "For Mum",
+        {
+            "movie": (
+                Look(
+                    keywords=("mother daughter relationship", "mother son relationship", "single mother"),
+                    votes=300,
+                    rating=7.0,
+                ),
+            ),
+            "series": (
+                Look(
+                    keywords=("mother daughter relationship", "mother son relationship", "single mother"),
+                    votes=100,
+                    rating=7.2,
+                ),
+            ),
+        },
+        window=((5, 5), (5, 12)),
+        alt_names=("Mums on Screen", "Mother Knows Best"),
+    ),
+    Spec(
+        "fathers_day",
+        "season",
+        "For Dad",
+        {
+            "movie": (
+                Look(
+                    keywords=("father son relationship", "father daughter relationship", "single father"),
+                    votes=300,
+                    rating=7.0,
+                ),
+            ),
+            "series": (
+                Look(
+                    keywords=("father son relationship", "father daughter relationship", "single father"),
+                    votes=100,
+                    rating=7.2,
+                ),
+            ),
+        },
+        window=((6, 14), (6, 21)),
+        alt_names=("Dads on Screen", "Father Figures"),
+    ),
+    Spec(
+        "womens_day",
+        "season",
+        "Women Leading the Story",
+        {
+            "movie": (Look(keywords=("female protagonist", "feminism", "woman director"), votes=500, rating=7.0),),
+            "series": (Look(keywords=("female protagonist", "feminism", "woman director"), votes=200, rating=7.3),),
+        },
+        window=((3, 1), (3, 9)),
+        alt_names=("Her Turn", "Women Who Run the Show"),
+    ),
+    Spec(
+        "easter",
+        "season",
+        "Easter Weekend",
+        {
+            "movie": (
+                Look(
+                    genres="10751|18|12",
+                    keywords=("easter", "faith", "religion", "jesus christ"),
+                    votes=200,
+                    rating=6.8,
+                ),
+                Look(genres="10751|35|10749", votes=1500, rating=7.0),
+            ),
+            "series": (Look(keywords=("easter", "faith", "religion", "jesus christ"), votes=100, rating=7.0),),
+        },
+        window=((3, 25), (4, 22)),
+        alt_names=("Hope and Renewal", "Long Weekend Watching"),
+    ),
+    Spec(
+        "thanksgiving",
+        "season",
+        "Gather Round",
+        {
+            "movie": (
+                Look(
+                    genres="35|10751|18", keywords=("thanksgiving", "family reunion", "dinner"), votes=200, rating=6.8
+                ),
+                Look(genres="35|10751", votes=1500, rating=7.0),
+            ),
+            "series": (Look(genres="35|10751", votes=300, rating=7.3),),
+        },
+        window=((11, 15), (11, 28)),
+        alt_names=("Family Feasts", "Thanksgiving Tables"),
+    ),
+    Spec(
+        "black_voices",
+        "season",
+        "Black Voices on Screen",
+        {
+            "movie": (Look(keywords=("african american", "civil rights", "racism"), votes=300, rating=7.0),),
+            "series": (Look(keywords=("african american", "civil rights", "racism"), votes=100, rating=7.2),),
+        },
+        window=((2, 1), (2, 28)),
+        alt_names=("Black Stories, Told Well", "Celebrating Black Cinema"),
+    ),
+    Spec(
+        "harmattan",
+        "season",
+        "Harmattan Nights",
+        {
+            "movie": (
+                Look(genres="9648|18|10749", keywords=("winter", "snow", "cold"), votes=300, rating=7.0),
+                Look(genres="18|10749", votes=1500, rating=7.4),
+            ),
+            "series": (Look(genres="18|9648", votes=500, rating=7.5),),
+        },
+        window=((1, 5), (2, 25)),
+        alt_names=("Cold Night, Warm Blanket", "Wrapped Up and Watching"),
+    ),
+    Spec(
+        "love_is_overrated",
+        "season",
+        "Love Is Overrated",
+        {
+            "movie": (Look(genres="35|18", keywords=("breakup", "divorce", "heartbreak"), votes=300, rating=6.9),),
+            "series": (Look(genres="35|18", keywords=("breakup", "divorce", "heartbreak"), votes=150, rating=7.2),),
+        },
+        window=((2, 5), (2, 14)),
+        alt_names=("Anti-Valentine's Picks", "Single and Thriving"),
+    ),
+    Spec(
+        "year_in_review",
+        "season",
+        "Best of the Year",
+        {
+            "movie": (Look(sort="vote_average.desc", recent_days=365, votes=1500, rating=7.4),),
+            "series": (Look(sort="vote_average.desc", recent_days=365, votes=500, rating=7.8),),
+        },
+        window=((12, 15), (12, 31)),
+        alt_names=("The Year's Best", "Don't Miss These From This Year"),
+    ),
+    Spec(
+        "tuesday",
+        "moment",
+        "Tuesday Twist",
+        {
+            "movie": (Look(genres="9648|53|35", votes=1000, rating=7.0),),
+            "series": (Look(genres="9648|35|80", votes=400, rating=7.3),),
+        },
+        alt_names=("Tuesday Night Pick", "Midweek Warm-Up"),
+    ),
+    Spec(
+        "month_start",
+        "moment",
+        "New Month, New Watchlist",
+        {
+            "movie": (Look(sort="popularity.desc", recent_days=365, votes=500, rating=7.2),),
+            "series": (Look(sort="popularity.desc", recent_days=365, votes=200, rating=7.4),),
+        },
+        alt_names=("Fresh Month, Fresh Picks", "Start the Month Right"),
     ),
 )
 SPEC_BY_KEY = {s.key: s for s in SPECS}
 # Rows that belong to one weekday (Monday is 0).
-WEEKDAY_ROWS = {"monday": 0, "midweek": 2, "thursday": 3}
+WEEKDAY_ROWS = {"monday": 0, "tuesday": 1, "midweek": 2, "thursday": 3}
 
 
 @dataclass(frozen=True)
@@ -549,6 +1691,8 @@ def is_eligible(spec: Spec, today_: Today) -> bool:
         return today_.day.weekday() == WEEKDAY_ROWS[spec.key]
     if spec.key == "payday":
         return today_.day.day >= 25
+    if spec.key == "month_start":
+        return today_.day.day <= 4
     if spec.key == "rainy":
         return today_.rain
     if spec.key == "people":
@@ -648,7 +1792,8 @@ async def _pick(
         decades = list(range(max(DEFAULT_YEAR_MIN, year_min // 10 * 10), day.year // 10 * 10 + 1, 10))
         arg = str(decades[day.toordinal() % len(decades)])
         fields["decade"] = arg
-    return {"definition": f"{spec.key}:{arg}" if arg else spec.key, "name": spec.name.format(**fields)}
+    name = random.Random(f"{spec.key}|{day.isoformat()}").choice((spec.name, *spec.alt_names))
+    return {"definition": f"{spec.key}:{arg}" if arg else spec.key, "name": name.format(**fields)}
 
 
 class ContextRowService:

@@ -34,8 +34,11 @@ def build(monkeypatch):
     async def recommendations(**kwargs):
         return rows["recs"]
 
+    ttls: dict[str, int | None] = {}
+
     async def set_catalog(token, content_type, catalog_id, catalog, ttl=None):
         cached[catalog_id] = catalog
+        ttls[catalog_id] = ttl
 
     async def record(token, content_type, catalog_id, shown):
         claims[catalog_id] = shown
@@ -56,6 +59,7 @@ def build(monkeypatch):
         data, _ = asyncio.run(catalog_service._build_catalog(Ctx(), "movie", "watchly.theme.1", {}))
         return data, cached, claims
 
+    run.ttls = ttls
     return run
 
 
@@ -75,7 +79,25 @@ def test_a_row_at_the_minimum_is_served(build):
     assert len(claims["watchly.theme.1"]) == 8
 
 
-def test_an_empty_build_is_still_not_cached(build):
+def test_an_empty_build_is_cached_for_an_hour_not_the_day(build):
+    data, cached, _ = build(0)
+
+    assert data["metas"] == []
+    assert cached["watchly.theme.1"] == {"metas": []}
+    assert build.ttls["watchly.theme.1"] == cs_module.settings.EMPTY_ROW_CACHE_SECONDS == 3600
+
+
+def test_a_short_or_full_row_keeps_the_day_long_cache(build):
+    build(7)
+    assert build.ttls["watchly.theme.1"] == cs_module.settings.CATALOG_STALE_TTL
+
+    build(8)
+    assert build.ttls["watchly.theme.1"] == cs_module.settings.CATALOG_STALE_TTL
+
+
+def test_an_empty_build_is_not_cached_when_the_switch_is_off(build, monkeypatch):
+    monkeypatch.setattr(cs_module.settings, "EMPTY_ROW_CACHE_SECONDS", 0)
+
     data, cached, _ = build(0)
 
     assert data["metas"] == [] and cached == {}

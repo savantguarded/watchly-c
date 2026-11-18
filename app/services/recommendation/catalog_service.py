@@ -249,6 +249,14 @@ class CatalogService:
                 await user_cache.set_catalog(
                     ctx.token, content_type, catalog_id, {"metas": cleaned}, settings.CATALOG_STALE_TTL
                 )
+            elif settings.EMPTY_ROW_CACHE_SECONDS:
+                # An empty build can be a provider outage rather than a row with nothing
+                # to show, so it expires in an hour instead of riding the day's cache.
+                # Uncached, Nuvio's every open rebuilt the whole row.
+                logger.info(f"[{redact_token(ctx.token)}] {catalog_id} built with no titles")
+                await user_cache.set_catalog(
+                    ctx.token, content_type, catalog_id, {"metas": []}, settings.EMPTY_ROW_CACHE_SECONDS
+                )
 
             return {"metas": shuffle_data_if_needed(ctx.user_settings, catalog_id, cleaned)}, headers
 

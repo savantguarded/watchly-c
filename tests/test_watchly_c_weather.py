@@ -47,13 +47,20 @@ def lookup(monkeypatch, payload) -> tuple[bool, FakeRedis]:
 
 
 def test_forecast_rain_over_the_threshold_counts(monkeypatch):
-    rain, _ = lookup(monkeypatch, {"daily": {"precipitation_sum": [6.4]}})
+    rain, _ = lookup(monkeypatch, {"daily": {"precipitation_sum": [12.9]}})
     assert rain
 
 
 def test_a_drizzle_does_not(monkeypatch):
     rain, _ = lookup(monkeypatch, {"daily": {"precipitation_sum": [0.4]}})
     assert not rain
+
+
+def test_the_daily_model_drizzle_over_lagos_is_not_a_rainy_day(monkeypatch):
+    # Open-Meteo's sums for hot, dry November days in Lagos.
+    for mm in (2.0, 2.8, 4.2, 4.5):
+        rain, _ = lookup(monkeypatch, {"daily": {"precipitation_sum": [mm]}})
+        assert not rain, mm
 
 
 def test_a_failed_lookup_is_dry_and_kept_so_it_is_not_retried_by_every_account(monkeypatch):
@@ -65,7 +72,7 @@ def test_a_failed_lookup_is_dry_and_kept_so_it_is_not_retried_by_every_account(m
 
 
 def test_the_answer_is_looked_up_once_a_day(monkeypatch):
-    _, redis = lookup(monkeypatch, {"daily": {"precipitation_sum": [9]}})
+    _, redis = lookup(monkeypatch, {"daily": {"precipitation_sum": [15]}})
     FakeClient.instances = []
 
     assert asyncio.run(weather.rains_today(DAY))

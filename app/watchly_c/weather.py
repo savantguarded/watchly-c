@@ -8,7 +8,9 @@ from app.core.config import settings
 from app.core.constants import WEATHER_KEY
 from app.services.redis_service import redis_service
 
-RAIN_MM = 2.0
+# The forecast model puts 2-4 mm of drizzle over Lagos on most dry-season days; a day
+# that really rains comes in at 10 mm or more.
+RAIN_MM = 10.0
 RAIN_TTL_SECONDS = 36 * 3600
 
 

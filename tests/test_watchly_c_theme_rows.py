@@ -77,6 +77,18 @@ def test_a_two_genre_row_keeps_both_genres():
     assert axes.genre_groups == (frozenset({DRAMA}), frozenset({CRIME}))
 
 
+def test_a_genre_series_lack_keeps_the_row_to_movies():
+    # TMDB series have no Horror; without it "Comedy and Horror" was plain Comedy (Seinfeld).
+    assert ThemeAxes.parse("watchly.theme.a:g35.f:g27").across("movie").is_empty()
+
+
+def test_a_keyword_still_carries_a_row_across_when_a_genre_cannot():
+    axes = ThemeAxes.parse(f"watchly.theme.a:g35.f:g27.k:k{MURDER}").across("movie")
+
+    assert axes.genre_groups == (frozenset({35}),)
+    assert axes.keywords == frozenset({MURDER})
+
+
 def test_a_crime_drama_row_holds_no_drama_without_crime(monkeypatch):
     catalogue = [candidate(n, genres=(DRAMA, CRIME)) for n in range(1, 6)] + [
         candidate(n, genres=(DRAMA,)) for n in range(100, 140)

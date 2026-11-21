@@ -35,7 +35,10 @@ CONTEXT_CONFIG_ID = "watchly.ctx"
 CONTEXT_PREFIX = "watchly.ctx."
 LOG_TTL_SECONDS = 45 * 86400
 # Bumped when the rules for choosing a day's rows change, so a day already chosen is chosen again.
-LOG_VERSION = 4
+LOG_VERSION = 5
+# A row that ran within this many days sits out, so a season with one row (Family Feasts
+# through late November) doesn't take the season slot every day of its window.
+REPEAT_AFTER_DAYS = 7
 # Widening levels: more pages and a lower vote floor each time, only while a row is short.
 LEVELS = 3
 FIRST_ON_THIS_DAY_YEAR = 1960
@@ -1704,8 +1707,14 @@ def choose_specs(types: list[str], today_: Today, shown: dict[str, str], rng: ra
     """`count` distinct specs for a mixed set of rows, in slot order. Pinned rows come
     first. The rest cycle through season, moment and evergreen kinds, taking the spec
     shown longest ago in each, so every row that fits the day gets its turn. A kind with
-    nothing that fits (no season, a dry weekday) hands its place to the evergreen rows."""
-    usable = [s for s in SPECS if set(s.types) & set(types) and is_eligible(s, today_)]
+    nothing that fits (no season, a dry weekday, every one shown this week) hands its place
+    to the evergreen rows."""
+    recent = (today_.day - timedelta(days=REPEAT_AFTER_DAYS - 1)).isoformat()
+    usable = [
+        s
+        for s in SPECS
+        if set(s.types) & set(types) and is_eligible(s, today_) and (s.pinned or shown.get(s.key, "") < recent)
+    ]
     chosen = [s for s in usable if s.pinned][:count]
     misses = 0
     kinds = itertools.cycle(SLOT_KINDS)

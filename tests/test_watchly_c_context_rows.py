@@ -163,6 +163,30 @@ def test_a_new_row_is_picked_every_day_for_three_weeks():
     assert len(set().union(*picked)) >= 20
 
 
+def test_a_season_with_one_row_does_not_show_it_every_day():
+    shown: dict[str, str] = {}
+    days: list[date] = []
+    for n in range(14):
+        today_ = Today(date(2026, 11, 15) + timedelta(days=n), False, True)
+        picked = {s.key for s in choose_specs(BOTH, today_, shown, random.Random(n), 4)}
+        shown.update({k: today_.day.isoformat() for k in picked})
+        if "thanksgiving" in picked:
+            days.append(today_.day)
+    assert days == [date(2026, 11, 15), date(2026, 11, 22)]
+
+
+def test_no_row_but_on_this_day_comes_back_within_a_week():
+    shown: dict[str, str] = {}
+    last: dict[str, date] = {}
+    for n in range(60):
+        today_ = Today(date(2026, 10, 1) + timedelta(days=n), n % 3 == 0, True)
+        for spec in choose_specs(BOTH, today_, shown, random.Random(n), 4):
+            if spec.key != "on_this_day":
+                assert spec.key not in last or (today_.day - last[spec.key]).days >= 7, spec.key
+                last[spec.key] = today_.day
+            shown[spec.key] = today_.day.isoformat()
+
+
 def test_no_people_row_without_a_movie_to_build_it_from():
     assert "people" not in keys(["movie"], at("2026-04-14", people=False), {}, count=6)
 

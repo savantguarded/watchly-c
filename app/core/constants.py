@@ -40,8 +40,9 @@ DAILY_REFRESH_RUN_KEY: str = "watchly:c:daily_refresh:run:{day}"
 CLAIMS_KEY: str = "watchly:c:claims:{token}:{content_type}:{catalog_id}"
 # Watchly C: which seasonal/contextual rows a token was given today, and when each last ran.
 CONTEXT_LOG_KEY: str = "watchly:c:context:{token}"
-# Watchly C: whether it rains today, shared by every account.
-WEATHER_KEY: str = "watchly:c:rain:{day}"
+# Watchly C: whether it rains today, shared by every account. v2: the rain threshold rose,
+# so answers kept under the old one are not reused.
+WEATHER_KEY: str = "watchly:c:rain:v2:{day}"
 # Watchly C: IMDb id -> "movie:<tmdb id>" / "tv:<tmdb id>", shared by every account.
 IMDB_TO_TMDB_KEY: str = "watchly:c:imdb_tmdb"
 

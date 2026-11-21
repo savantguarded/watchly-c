@@ -73,13 +73,17 @@ class ThemeAxes:
         return cls(tuple(frozenset({g}) for g in dict.fromkeys(genres)), frozenset(keywords), rest)
 
     def across(self, native: str) -> "ThemeAxes":
-        """The same row for the other type: genres mapped across, a group with no partner
-        dropped, and no runtime, which doesn't carry between films and episodes."""
+        """The same row for the other type: genres mapped across and no runtime, which
+        doesn't carry between films and episodes. A genre with no partner (TMDB series have
+        no Horror) is dropped only when a keyword still holds the theme; dropping it from
+        "Comedy and Horror" left plain Comedy and filled the row with sitcoms."""
         table = MOVIE_TO_SERIES_GENRES if native == "movie" else SERIES_TO_MOVIE_GENRES
-        groups = tuple(
-            mapped for group in self.genre_groups if (mapped := frozenset(g for v in group for g in table.get(v, [])))
+        groups = tuple(frozenset(g for v in group for g in table.get(v, [])) for group in self.genre_groups)
+        if not all(groups) and not self.keywords:
+            return ThemeAxes((), frozenset(), {})
+        return ThemeAxes(
+            tuple(g for g in groups if g), self.keywords, {k: v for k, v in self.rest.items() if k != "runtime"}
         )
-        return ThemeAxes(groups, self.keywords, {k: v for k, v in self.rest.items() if k != "runtime"})
 
     def is_empty(self) -> bool:
         return not (self.genre_groups or self.keywords or self.rest)
